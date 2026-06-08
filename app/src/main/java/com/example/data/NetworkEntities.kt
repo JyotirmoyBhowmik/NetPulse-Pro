@@ -2,10 +2,8 @@ package com.example.data
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
-import kotlinx.serialization.Serializable
 
 @Entity(tableName = "network_logs")
-@Serializable
 data class NetworkLog(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val timestamp: Long = System.currentTimeMillis(),
@@ -27,7 +25,6 @@ data class NetworkLog(
 )
 
 @Entity(tableName = "roaming_logs")
-@Serializable
 data class RoamingLog(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val timestamp: Long = System.currentTimeMillis(),
@@ -39,7 +36,6 @@ data class RoamingLog(
 )
 
 @Entity(tableName = "anomaly_logs")
-@Serializable
 data class AnomalyLog(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val timestamp: Long = System.currentTimeMillis(),

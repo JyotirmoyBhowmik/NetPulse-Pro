@@ -53,7 +53,7 @@ class NetworkMonitoringService : Service() {
             ACTION_START -> startForegroundMonitoring()
             ACTION_STOP -> stopMonitoring()
         }
-        return START_NOTSTICKY
+        return START_NOT_STICKY
     }
 
     private fun startForegroundMonitoring() {

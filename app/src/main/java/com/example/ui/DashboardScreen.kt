@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
@@ -47,6 +48,7 @@ import com.example.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
+import kotlin.math.sin
 
 @OptIn(ExperimentalMaterial3Api::class)
 @SuppressLint("DefaultLocale")
@@ -68,15 +70,13 @@ fun DashboardScreen(viewModel: NetworkViewModel) {
     val activeTracking by viewModel.continuousTrackingActive.collectAsState()
     val activeBand by viewModel.activeBandScanner.collectAsState()
     val exportedFile by viewModel.exportedFileState.collectAsState()
+    val channels by viewModel.scannedChannels.collectAsState()
 
-    // Forms
-    var serverUrl by remember { mutableStateOf("https://vpnoci.jyotirmoyb.com") }
-    var dataCapLimitStr by remember { mutableStateOf("500") }
+    // Form inputs
     var encryptPasscode by remember { mutableStateOf("") }
-    var showExportDialog by remember { mutableStateOf(false) }
-
-    // Chart scrubbing state
-    var scrubbedIndex by remember { mutableStateOf<Int?>(null) }
+    
+    // Bottom tab navigation state
+    var selectedTab by remember { mutableStateOf("Home") } // Home, Speedtest, AI Labs, Secure
 
     // Request permissions launcher
     val permissionsToRequest = remember {
@@ -98,32 +98,28 @@ fun DashboardScreen(viewModel: NetworkViewModel) {
         if (locationGranted) {
             Toast.makeText(context, "Location parameters synced successfully.", Toast.LENGTH_SHORT).show()
         } else {
-            Toast.makeText(context, "Some telemetry readouts might require fine location.", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "Location permission recommended for SSID monitoring.", Toast.LENGTH_LONG).show()
         }
     }
 
-    // Trigger permission requests on start
+    // Trigger permission requests once
     LaunchedEffect(Unit) {
         permissionLauncher.launch(permissionsToRequest)
-        // Auto-refresh Cap to showcase
-        viewModel.configureDataCap(500)
     }
 
-    // Share cipher logs once generated
+    // Share cipher logs once file generated
     LaunchedEffect(exportedFile) {
         exportedFile?.let { file ->
-            val payloadText = "NetPulse Encrypted Log Export File ready. Secured via AES. Path: ${file.absolutePath}"
-            
-            // Native Share Sheet trigger for our encrypted file block
+            val payloadText = "NetPulse Encrypted Log Export File ready. Secured via AES-128. Saved at: ${file.absolutePath}"
             try {
                 val intent = Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
                     putExtra(Intent.EXTRA_SUBJECT, "Secure NetPulse Encrypted Log Export")
-                    putExtra(Intent.EXTRA_TEXT, "$payloadText\n\n[CIPHER BLOB ATTACHED]")
+                    putExtra(Intent.EXTRA_TEXT, "$payloadText\n\n[Symmetric AES-128 Cipher Payload]")
                 }
                 context.startActivity(Intent.createChooser(intent, "Transmit Encrypted Audit Payload"))
             } catch (e: Exception) {
-                Toast.makeText(context, "Sharing system busy. Saved to cache.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Sharing system busy. File saved to: ${file.name}", Toast.LENGTH_SHORT).show()
             }
             viewModel.consumeExportedFile()
         }
@@ -133,15 +129,17 @@ fun DashboardScreen(viewModel: NetworkViewModel) {
         topBar = {
             CenterAlignedTopAppBar(
                 title = {
-                    Text(
-                        "NETPULSE SECURE PRO",
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Black,
-                            fontFamily = FontFamily.Monospace,
-                            letterSpacing = 1.5.sp,
-                            color = CyberGreen
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            "NETPULSE SECURE PRO",
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontWeight = FontWeight.Black,
+                                fontFamily = FontFamily.Monospace,
+                                letterSpacing = 1.5.sp,
+                                color = CyberGreen
+                            )
                         )
-                    )
+                    }
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
                     containerColor = CyberBlack
@@ -150,14 +148,88 @@ fun DashboardScreen(viewModel: NetworkViewModel) {
                     IconButton(
                         onClick = {
                             viewModel.clearTelemetryHistory()
-                            Toast.makeText(context, "Telemetry database wiped locally.", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Telemetry history wiped locally.", Toast.LENGTH_SHORT).show()
                         },
                         modifier = Modifier.testTag("clear_history_button")
                     ) {
-                        Icon(android.R.drawable.ic_menu_delete, contentDescription = "Wipe logs", tint = CyberRed)
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Wipe logs",
+                            tint = CyberRed
+                        )
                     }
                 }
             )
+        },
+        bottomBar = {
+            // "Sophisticated Dark" Navigation row
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)),
+                color = CyberSlate,
+                tonalElevation = 8.dp
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .height(72.dp)
+                        .padding(bottom = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceAround,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val tabs = listOf(
+                        Triple("Home", Icons.Default.Home, "home_tab"),
+                        Triple("Speedtest", Icons.Default.Build, "speedtest_tab"),
+                        Triple("AI Labs", Icons.Default.Info, "ai_labs_tab"),
+                        Triple("Secure", Icons.Default.Lock, "secure_tab")
+                    )
+                    
+                    tabs.forEach { (tabName, icon, tag) ->
+                        val isSelected = selectedTab == tabName
+                        val tabColor = if (isSelected) CyberGreen else Color.Gray
+                        
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { selectedTab = tabName }
+                                .padding(vertical = 8.dp)
+                                .testTag(tag)
+                        ) {
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = tabName,
+                                tint = tabColor,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = tabName,
+                                fontSize = 10.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = tabColor,
+                                fontFamily = FontFamily.Monospace
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            // Glowing indicator bar
+                            AnimatedVisibility(
+                                visible = isSelected,
+                                enter = expandHorizontally() + fadeIn(),
+                                exit = shrinkHorizontally() + fadeOut()
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .width(16.dp)
+                                        .height(2.dp)
+                                        .background(CyberGreen, RoundedCornerShape(1.dp))
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         },
         containerColor = CyberBlack
     ) { innerPadding ->
@@ -165,177 +237,833 @@ fun DashboardScreen(viewModel: NetworkViewModel) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = 16dp),
-            verticalArrangement = Arrangement.spacedBy(16dp)
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-
-            // SECTION 1: REAL-TIME SIGNAL WAVEFORM & STATE INDICATORS
+            
+            // Sub-header nodes displaying details based on selection
             item {
-                CyberCardGlowPanel {
-                    Column(
-                        modifier = Modifier.padding(16dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column {
-                                Text(
-                                    text = if (logs.isNotEmpty()) logs.first().ssid else "LAN_Mesh_System",
-                                    fontSize = 18sp,
-                                    fontWeight = FontWeight.Bold,
-                                    fontFamily = FontFamily.Monospace,
-                                    color = Color.White
-                                )
-                                Text(
-                                    text = if (logs.isNotEmpty()) "BSSID: ${logs.first().bssid}" else "BSSID: scanning...",
-                                    fontSize = 11sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    color = Color.LightGray
-                                )
-                            }
-                            
-                            // Live standard badge
-                            val currentStd = if (logs.isNotEmpty()) logs.first().standard else "Wi-Fi 6"
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "NETWORK NODE ALPHA",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            color = CyberGreen,
+                            letterSpacing = 1.sp
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = if (logs.isNotEmpty()) logs.first().ssid else "CORP_SECURE_WIFI_7",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Light,
+                                color = Color.White
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
                             Box(
                                 modifier = Modifier
-                                    .clip(RoundedCornerShape(4dp))
-                                    .background(CyberGreen.copy(alpha = 0.15f))
-                                    .padding(horizontal = 8dp, vertical = 4dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(CyberGreen.copy(alpha = 0.1f))
+                                    .border(1.dp, CyberGreen.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 5.dp, vertical = 2.dp)
                             ) {
                                 Text(
-                                    text = currentStd,
-                                    color = CyberGreen,
-                                    fontSize = 10sp,
+                                    "WPA3",
+                                    fontSize = 8.sp,
                                     fontWeight = FontWeight.Bold,
+                                    color = CyberGreen,
                                     fontFamily = FontFamily.Monospace
                                 )
                             }
                         }
-
-                        Spacer(modifier = Modifier.height(16dp))
-
-                        // Custom morphing waveform animation based on latest RSSI
-                        val latestRssi = if (logs.isNotEmpty()) logs.first().rssiDbm else -45
-                        val waveAmplitude = remember { Animatable(30f) }
-                        
-                        LaunchedEffect(latestRssi) {
-                            // Signal strength translates to Wave Amplitude and frequency
-                            val targetAmplitude = when {
-                                latestRssi > -50 -> 45f  // Very Stable
-                                latestRssi > -70 -> 25f  // Medium Range
-                                else -> 10f            // Flatline decay
+                    }
+                    
+                    // Cybernetic glow status light
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .clip(RoundedCornerShape(5.dp))
+                            .background(CyberGreen)
+                            .drawBehind {
+                                drawCircle(
+                                    color = CyberGreen.copy(alpha = 0.4f),
+                                    radius = size.minDimension * 2.5f
+                                )
                             }
-                            waveAmplitude.animateTo(
-                                targetValue = targetAmplitude,
-                                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
-                            )
-                        }
+                    )
+                }
+            }
 
-                        // Animating wave loop
-                        val waveOffsetState = rememberInfiniteTransition(label = "Wave Transition")
-                        val wavePhase by waveOffsetState.animateFloat(
-                            initialValue = 0f,
-                            targetValue = 2f * java.lang.Math.PI.toFloat(),
-                            animationSpec = infiniteRepeatable(
-                                animation = tween(1200, easing = LinearEasing),
-                                repeatMode = RepeatMode.Restart
-                            ),
-                            label = "Wave phase"
-                        )
-
-                        Canvas(
+            when (selectedTab) {
+                "Home" -> {
+                    // TAB 1: SIGNAL INTENSITY WAVEFORM & CORE STATS
+                    item {
+                        // DBm Value Circular Radial Glow Container
+                        Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(65dp)
-                                .clip(RoundedCornerShape(8dp))
-                                .background(CyberBlack)
-                                .border(1.dp, CyberCharcoal, RoundedCornerShape(8dp))
+                                .height(200.dp)
+                                .clip(RoundedCornerShape(32.dp))
+                                .background(CyberSlate)
+                                .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(32.dp))
+                                .drawBehind {
+                                    // Circular glow
+                                    drawCircle(
+                                        color = CyberGreen.copy(alpha = 0.12f),
+                                        radius = size.minDimension * 0.75f,
+                                        center = offsetBeforeLayout(size)
+                                    )
+                                },
+                            contentAlignment = Alignment.Center
                         ) {
-                            val width = size.width
-                            val height = size.height
-                            val midY = height / 2f
-                            val path = Path()
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                val currentRssi = if (logs.isNotEmpty()) logs.first().rssiDbm else -42
+                                val rssiText = if (currentRssi >= 0) "Scanning" else "$currentRssi"
+                                
+                                Row(
+                                    verticalAlignment = Alignment.Bottom,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Text(
+                                        text = rssiText,
+                                        fontSize = 58.sp,
+                                        fontWeight = FontWeight.Light,
+                                        color = Color.White,
+                                        letterSpacing = (-1.5).sp
+                                    )
+                                    if (currentRssi < 0) {
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "dBm",
+                                            fontSize = 16.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = CyberGreen,
+                                            modifier = Modifier.padding(bottom = 12.dp)
+                                        )
+                                    }
+                                }
+                                
+                                Text(
+                                    text = "SIGNAL INTENSITY: ${getRssiCategory(currentRssi)}",
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = Color.White.copy(alpha = 0.4f),
+                                    letterSpacing = 1.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                
+                                Spacer(modifier = Modifier.height(18.dp))
+                                
+                                // Elegant glowing vertical indicator columns
+                                val activeBars = getActiveBarsCount(currentRssi)
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                    verticalAlignment = Alignment.Bottom,
+                                    modifier = Modifier.height(32.dp)
+                                ) {
+                                    for (i in 1..8) {
+                                        val isLit = i <= activeBars
+                                        val barHeight = 8.dp + (i * 3).dp
+                                        val barColor = if (isLit) CyberGreen else Color.White.copy(alpha = 0.05f)
+                                        val glowOpacity = if (isLit) 0.35f else 0f
+                                        
+                                        Box(
+                                            modifier = Modifier
+                                                .width(6.dp)
+                                                .height(barHeight)
+                                                .clip(RoundedCornerShape(3.dp))
+                                                .background(barColor)
+                                                .drawBehind {
+                                                    if (glowOpacity > 0) {
+                                                        drawCircle(
+                                                            color = CyberGreen.copy(alpha = glowOpacity),
+                                                            radius = size.maxDimension * 1.5f
+                                                        )
+                                                    }
+                                                }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
 
-                            path.moveTo(0f, midY)
-                            // Draw nice cyber wave curves
-                            for (x in 0..width.toInt() step 5) {
-                                val xRad = (x.toFloat() / width) * 4f * java.lang.Math.PI.toFloat()
-                                val y = midY + waveAmplitude.value * kotlin.math.sin(xRad + wavePhase)
-                                path.lineTo(x.toFloat(), y)
+                    // Simulated Real-Time Sine Wave Oscillating Waveform
+                    item {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(130.dp)
+                                .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(24.dp)),
+                            colors = CardDefaults.cardColors(containerColor = CyberSlate),
+                            shape = RoundedCornerShape(24.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(
+                                    "LIVE COHERENCE WAVEFORM (SCAN FREQUENCY)",
+                                    fontSize = 9.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = CyberCyan,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                
+                                val infiniteTransition = rememberInfiniteTransition(label = "wave")
+                                val waveOffset by infiniteTransition.animateFloat(
+                                    initialValue = 0f,
+                                    targetValue = 2f * Math.PI.toFloat(),
+                                    animationSpec = infiniteRepeatable(
+                                        animation = tween(1500, easing = LinearEasing),
+                                        repeatMode = RepeatMode.Restart
+                                    ),
+                                    label = "offset"
+                                )
+
+                                Canvas(modifier = Modifier.fillMaxSize()) {
+                                    val width = size.width
+                                    val height = size.height
+                                    val centerY = height / 2f
+                                    val path = Path()
+                                    
+                                    val points = 120
+                                    for (i in 0..points) {
+                                        val x = (i.toFloat() / points) * width
+                                        val normalizedX = (i.toFloat() / points) * 4f * Math.PI.toFloat()
+                                        val y = centerY + sin(normalizedX + waveOffset) * (height * 0.35f)
+                                        if (i == 0) {
+                                            path.moveTo(x, y)
+                                        } else {
+                                            path.lineTo(x, y)
+                                        }
+                                    }
+                                    
+                                    drawPath(
+                                        path = path,
+                                        color = CyberCyan,
+                                        style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
+                                    )
+                                    
+                                    // Highlight points on signal logs
+                                    drawCircle(
+                                        color = CyberGreen,
+                                        radius = 4.dp.toPx(),
+                                        center = Offset(width * 0.3f, centerY + sin(0.3f * 4f * Math.PI.toFloat() + waveOffset) * (height * 0.35f))
+                                    )
+                                    drawCircle(
+                                        color = CyberAmber,
+                                        radius = 4.dp.toPx(),
+                                        center = Offset(width * 0.7f, centerY + sin(0.7f * 4f * Math.PI.toFloat() + waveOffset) * (height * 0.35f))
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Grid layout stats pairing Link Speed & Frequency
+                    item {
+                        val currentSpeed = if (logs.isNotEmpty()) "${logs.first().linkSpeedMbps} Mbps" else "1.2 Gbps"
+                        val currentFreq = if (logs.isNotEmpty()) "${logs.first().frequencyGhz} GHz" else "6.0 GHz"
+                        val channelStr = if (logs.isNotEmpty()) "CH ${(logs.first().frequencyGhz * 10).toInt() % 100}" else "CH 37"
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(24.dp))
+                                    .background(CyberSlate)
+                                    .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(24.dp))
+                                    .padding(16.dp)
+                            ) {
+                                Text(
+                                    "LINK SPEED",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = CyberCyan,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = currentSpeed,
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color.White
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "Wi-Fi 7 Standard",
+                                    fontSize = 10.sp,
+                                    color = Color.White.copy(alpha = 0.3f)
+                                )
                             }
 
-                            val waveColor = when {
-                                latestRssi > -50 -> CyberGreen
-                                latestRssi > -75 -> CyberCyan
-                                else -> CyberRed
-                            }
-
-                            drawPath(
-                                path = path,
-                                color = waveColor,
-                                style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
-                            )
-                            
-                            // Background tech grid lines
-                            for (gridX in 0..width.toInt() step (width / 10).toInt()) {
-                                drawLine(
-                                    color = CyberCharcoal.copy(alpha = 0.5f),
-                                    start = Offset(gridX.toFloat(), 0f),
-                                    end = Offset(gridX.toFloat(), height),
-                                    strokeWidth = 1.dp.toPx()
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(24.dp))
+                                    .background(CyberSlate)
+                                    .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(24.dp))
+                                    .padding(16.dp)
+                            ) {
+                                Text(
+                                    "FREQUENCY",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = CyberAmber,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = currentFreq,
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color.White
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = channelStr,
+                                    fontSize = 10.sp,
+                                    color = Color.White.copy(alpha = 0.3f)
                                 )
                             }
                         }
+                    }
 
-                        Spacer(modifier = Modifier.height(16dp))
-
-                        // Stats metrics summary grid
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                    // Telemetry Core Metadata Rows
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(24.dp))
+                                .background(CyberSlate)
+                                .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(24.dp))
+                                .padding(16.dp)
                         ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("RSSI SIGNAL", fontSize = 9sp, color = Color.Gray, fontFamily = FontFamily.Monospace)
-                                Text("$latestRssi dBm", fontSize = 16sp, fontWeight = FontWeight.Bold, color = CyberGreen)
+                            Text(
+                                "HARDWARE INTERFACE CONFIG",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = CyberGreen
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            
+                            val bssidText = if (logs.isNotEmpty()) logs.first().bssid else "9C:3B:5A:1E:DF:09"
+                            val gatewayIp = if (logs.isNotEmpty()) logs.first().gatewayIp else "192.168.1.1"
+                            val publicIp = if (logs.isNotEmpty()) logs.first().publicIp else "12.245.54.1"
+                            val ispName = if (logs.isNotEmpty()) logs.first().ispName else "SecureLink Telecom"
+
+                            MetadataRow("BSSID Mac", bssidText)
+                            Divider(color = Color.White.copy(alpha = 0.05f), modifier = Modifier.padding(vertical = 10.dp))
+                            MetadataRow("Gateway Host", gatewayIp)
+                            Divider(color = Color.White.copy(alpha = 0.05f), modifier = Modifier.padding(vertical = 10.dp))
+                            MetadataRow("ISP Provider", ispName)
+                            Divider(color = Color.White.copy(alpha = 0.05f), modifier = Modifier.padding(vertical = 10.dp))
+                            MetadataRow("Decrypted Public IP", publicIp)
+                        }
+                    }
+                    
+                    item {
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
+                }
+
+                "Speedtest" -> {
+                    // TAB 2: SPEED TEST DIAGNOSTIC SWEEP
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(32.dp))
+                                .background(CyberCharcoal)
+                                .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(32.dp))
+                                .padding(24.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text(
+                                        "TARGET SERVER",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White.copy(alpha = 0.5f),
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                    Text(
+                                        "vpnoci.jyotirmoyb.com",
+                                        fontSize = 16.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = Color.White
+                                    )
+                                }
+                                
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(CyberGreen)
+                                            .drawBehind {
+                                                drawCircle(
+                                                    color = CyberGreen.copy(alpha = 0.4f),
+                                                    radius = size.minDimension * 2.5f
+                                                )
+                                            }
+                                    )
+                                    Text(
+                                        "ACTIVE",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = CyberGreen,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
                             }
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("LINK SPEED", fontSize = 9sp, color = Color.Gray, fontFamily = FontFamily.Monospace)
-                                Text("${if (logs.isNotEmpty()) logs.first().linkSpeedMbps else 866} Mbps", fontSize = 16sp, fontWeight = FontWeight.Bold, color = CyberCyan)
+                            
+                            Spacer(modifier = Modifier.height(16.dp))
+                            
+                            // Client profile settings selectors
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(CyberBlack.copy(alpha = 0.3f))
+                                    .padding(4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                listOf("Streaming", "Gaming", "Eco").forEach { profile ->
+                                    val isSelected = selectedProfile == profile
+                                    val bg = if (isSelected) CyberSlate else Color.Transparent
+                                    val textColor = if (isSelected) CyberGreen else Color.Gray
+                                    val border = if (isSelected) BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)) else null
+                                    
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(bg)
+                                            .then(if (border != null) Modifier.border(border, RoundedCornerShape(8.dp)) else Modifier)
+                                            .clickable { viewModel.selectedProfile.value = profile }
+                                            .padding(vertical = 8.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            profile.uppercase(),
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = textColor,
+                                            fontFamily = FontFamily.Monospace
+                                        )
+                                    }
+                                }
                             }
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("FREQUENCY", fontSize = 9sp, color = Color.Gray, fontFamily = FontFamily.Monospace)
-                                Text("${String.format("%.1f", if (logs.isNotEmpty()) logs.first().frequencyGhz else 5.2)} GHz", fontSize = 16sp, fontWeight = FontWeight.Bold, color = CyberAmber)
+
+                            Spacer(modifier = Modifier.height(20.dp))
+
+                            // Gauge Panel Displays inside deep black box
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(24.dp))
+                                    .background(CyberBlack.copy(alpha = 0.4f))
+                                    .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(24.dp))
+                                    .padding(20.dp)
+                            ) {
+                                when (val state = speedTestState) {
+                                    is SpeedTestUIState.Idle -> {
+                                        Column(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalAlignment = Alignment.CenterHorizontally
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceAround
+                                            ) {
+                                                DiagnosticDisplayMetric("LATENCY", "42", "ms", CyberAmber)
+                                                DiagnosticDisplayMetric("JITTER", "4", "ms", CyberAmber)
+                                            }
+                                            Spacer(modifier = Modifier.height(20.dp))
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceAround
+                                            ) {
+                                                DiagnosticDisplayMetric("DOWNLOAD", "0.0", "Mbit/s", CyberCyan)
+                                                DiagnosticDisplayMetric("UPLOAD", "0.0", "Mbit/s", CyberGreen)
+                                            }
+                                        }
+                                    }
+                                    is SpeedTestUIState.Testing -> {
+                                        Column(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalAlignment = Alignment.CenterHorizontally
+                                        ) {
+                                            CircularProgressIndicator(
+                                                progress = { (state.progressPercent / 100f).toFloat() },
+                                                modifier = Modifier.size(54.dp),
+                                                color = CyberCyan,
+                                                trackColor = Color.White.copy(alpha = 0.05f)
+                                            )
+                                            Spacer(modifier = Modifier.height(12.dp))
+                                            Text(
+                                                text = "DIAGNOSING NODE OVER TLS...",
+                                                fontSize = 11.sp,
+                                                color = CyberCyan,
+                                                fontWeight = FontWeight.Bold,
+                                                fontFamily = FontFamily.Monospace
+                                            )
+                                            Text(
+                                                text = state.currentStep,
+                                                fontSize = 9.sp,
+                                                color = Color.LightGray,
+                                                fontFamily = FontFamily.Monospace,
+                                                modifier = Modifier.padding(top = 4.dp)
+                                            )
+                                        }
+                                    }
+                                    is SpeedTestUIState.Complete -> {
+                                        Column(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalAlignment = Alignment.CenterHorizontally
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceAround
+                                            ) {
+                                                DiagnosticDisplayMetric("LATENCY", "${String.format("%.1f", state.result.latencyMs)}", "ms", CyberAmber)
+                                                DiagnosticDisplayMetric("JITTER", "${String.format("%.1f", state.result.jitterMs)}", "ms", CyberAmber)
+                                            }
+                                            Spacer(modifier = Modifier.height(20.dp))
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceAround
+                                            ) {
+                                                DiagnosticDisplayMetric("DOWNLOAD", "${String.format("%.1f", state.result.downloadMbps)}", "Mbit/s", CyberCyan)
+                                                DiagnosticDisplayMetric("UPLOAD", "${String.format("%.1f", state.result.uploadMbps)}", "Mbit/s", CyberGreen)
+                                            }
+                                        }
+                                    }
+                                    is SpeedTestUIState.Error -> {
+                                        Column(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalAlignment = Alignment.CenterHorizontally
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Warning,
+                                                contentDescription = "Error",
+                                                tint = CyberRed,
+                                                modifier = Modifier.size(32.dp)
+                                            )
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Text(
+                                                text = "DIAGNOSTIC CHANNEL FAULT",
+                                                fontSize = 11.sp,
+                                                color = CyberRed,
+                                                fontWeight = FontWeight.Bold,
+                                                fontFamily = FontFamily.Monospace
+                                            )
+                                            Text(
+                                                text = state.message,
+                                                fontSize = 9.sp,
+                                                color = Color.Gray,
+                                                fontFamily = FontFamily.Monospace,
+                                                modifier = Modifier.padding(top = 4.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Spacer(modifier = Modifier.height(24.dp))
+                            
+                            // High contrast button triggers testing
+                            Button(
+                                onClick = { viewModel.startManualDiagnostic() },
+                                colors = ButtonDefaults.buttonColors(containerColor = CyberGreen),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(54.dp)
+                                    .testTag("run_speed_test_button"),
+                                enabled = speedTestState !is SpeedTestUIState.Testing
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.PlayArrow,
+                                        contentDescription = "Sweep Launch",
+                                        tint = CyberBlack,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        "RUN DIAGNOSTIC SWEEP",
+                                        color = CyberBlack,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
                             }
                         }
+                    }
+                    
+                    // Historical diagnostics stored lists
+                    item {
+                        Text(
+                            "HISTOGRAM DIAGNOSTIC HISTORY",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            color = CyberCyan
+                        )
+                    }
 
-                        Spacer(modifier = Modifier.height(16dp))
+                    val testHistoryLogs = logs.filter { it.downloadSpeedMbps > 0.0 || it.isManual }
+                    if (testHistoryLogs.isEmpty()) {
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(CyberSlate)
+                                    .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(16.dp))
+                                    .padding(24.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    "No performance sweeps recorded yet. Run a scan above.",
+                                    fontSize = 10.sp,
+                                    color = Color.Gray,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
+                    } else {
+                        items(testHistoryLogs.take(5)) { log ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(CyberSlate)
+                                    .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(16.dp))
+                                    .padding(16.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text(log.ssid, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                    Text("RSSI: ${log.rssiDbm} dBm  |  Ping: ${log.latencyMs.toInt()} ms", fontSize = 10.sp, color = Color.Gray, fontFamily = FontFamily.Monospace)
+                                }
+                                Column(verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.End) {
+                                    Text("↓ ${String.format("%.1f", log.downloadSpeedMbps)} Mbps", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = CyberCyan, fontFamily = FontFamily.Monospace)
+                                    Text("↑ ${String.format("%.1f", log.uploadSpeedMbps)} Mbps", fontSize = 10.sp, color = CyberGreen, fontFamily = FontFamily.Monospace)
+                                }
+                            }
+                        }
+                    }
+                    
+                    item {
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
+                }
 
-                        // TRACKING TOGGLE FOR FOREGROUND ENGINE
+                "AI Labs" -> {
+                    // TAB 3: COGNITIVE REAL-TIME ANALYTICS (AI CORES)
+                    item {
+                        Text(
+                            "AI COGNITIVE TELEMETRY CORE",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            color = CyberGreen,
+                            letterSpacing = 1.sp
+                        )
+                    }
+
+                    // Amber Glow AI diagnostics Insight element
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(24.dp))
+                                .background(CyberAmber.copy(alpha = 0.05f))
+                                .border(1.dp, CyberAmber.copy(alpha = 0.2f), RoundedCornerShape(24.dp))
+                                .padding(20.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(RoundedCornerShape(18.dp))
+                                        .background(CyberAmber.copy(alpha = 0.1f))
+                                        .border(1.dp, CyberAmber.copy(alpha = 0.3f), RoundedCornerShape(18.dp)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Info,
+                                        contentDescription = "AI Mind",
+                                        tint = CyberAmber,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        "AI DIAGNOSTIC INSIGHT",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = CyberAmber,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                    Text(
+                                        "Cognitive Local Model Decapsulation",
+                                        fontSize = 9.sp,
+                                        color = Color.White.copy(alpha = 0.4f),
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                            }
+                            
+                            Spacer(modifier = Modifier.height(16.dp))
+                            
+                            when (val state = aiState) {
+                                is AIDiagnoseUIState.Idle -> {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                                        Text(
+                                            "System diagnostic report pending. Ready to scan locally collected log payloads and verify channel interference optimizations.",
+                                            fontSize = 11.sp,
+                                            color = Color.LightGray
+                                        )
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        Button(
+                                            onClick = { viewModel.triggerAIDiagnostics() },
+                                            colors = ButtonDefaults.buttonColors(containerColor = CyberAmber),
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .testTag("ai_audit_button")
+                                        ) {
+                                            Text(
+                                                "TRIGGER SPECTRUM COGNITIVE AUDIT",
+                                                color = CyberBlack,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 10.sp,
+                                                fontFamily = FontFamily.Monospace
+                                            )
+                                        }
+                                    }
+                                }
+                                is AIDiagnoseUIState.Loading -> {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                                        Text(
+                                            "INTERROGATING NETWORK TELEMETRY VIA GEMINI...",
+                                            fontSize = 9.sp,
+                                            color = CyberAmber,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Spacer(modifier = Modifier.height(10.dp))
+                                        LinearProgressIndicator(
+                                            color = CyberAmber,
+                                            trackColor = Color.White.copy(alpha = 0.05f),
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    }
+                                }
+                                is AIDiagnoseUIState.Success -> {
+                                    Column {
+                                        Text(
+                                            text = state.recommendations,
+                                            fontSize = 11.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = Color.White,
+                                            lineHeight = 16.sp
+                                        )
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        Button(
+                                            onClick = { viewModel.aiDiagnoseState.value = AIDiagnoseUIState.Idle },
+                                            colors = ButtonDefaults.buttonColors(containerColor = CyberSlate),
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Text(
+                                                "CLR AUDIT LOGS",
+                                                color = Color.White,
+                                                fontSize = 9.sp,
+                                                fontFamily = FontFamily.Monospace
+                                            )
+                                        }
+                                    }
+                                }
+                                is AIDiagnoseUIState.Error -> {
+                                    Column {
+                                        Text(
+                                            text = "DIAGNOSTIC ERROR ID: ${state.message}",
+                                            fontSize = 11.sp,
+                                            color = CyberRed,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Spacer(modifier = Modifier.height(12.dp))
+                                        Button(
+                                            onClick = { viewModel.aiDiagnoseState.value = AIDiagnoseUIState.Idle },
+                                            colors = ButtonDefaults.buttonColors(containerColor = CyberSlate),
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Text("RETRY INTERROGATION", color = Color.White, fontSize = 9.sp)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Continuous Trace Mode trigger
+                    item {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(8dp))
-                                .background(CyberCharcoal)
-                                .padding(horizontal = 12dp, vertical = 8dp),
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(CyberSlate)
+                                .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = if (activeTracking) Icons.Default.Circle else Icons.Default.PlayArrow,
-                                    contentDescription = "Active Indicator",
-                                    tint = if (activeTracking) CyberGreen else Color.Gray,
-                                    modifier = Modifier.size(16dp)
-                                )
-                                Spacer(modifier = Modifier.width(8dp))
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    "Continuous Trace Mode (Foreground)",
-                                    fontSize = 11sp,
-                                    fontFamily = FontFamily.Monospace,
+                                    "Continuous Background Trace Engine",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
                                     color = Color.White
+                                )
+                                Text(
+                                    "Launches high precision foreground monitoring services for mesh handoffs.",
+                                    fontSize = 9.sp,
+                                    color = Color.Gray
                                 )
                             }
                             Switch(
@@ -347,751 +1075,378 @@ fun DashboardScreen(viewModel: NetworkViewModel) {
                                     uncheckedThumbColor = Color.Gray,
                                     uncheckedTrackColor = CyberCharcoal
                                 ),
-                                modifier = Modifier.scale(0.85f).testTag("foreground_service_switch")
+                                modifier = Modifier.testTag("foreground_service_switch")
                             )
                         }
                     }
-                }
-            }
 
-            // SECTION 2: SCRUBBABLE HISTORY GRAPH
-            item {
-                val graphLogs = viewModel.getScrubbedLogs()
-                CyberCardGlowPanel {
-                    Column(modifier = Modifier.padding(16dp)) {
+                    // Mesh Roaming and Anomalies lists representation
+                    item {
                         Text(
-                            "TELEMETRY TIMELINE & SIGNAL METRICS",
-                            fontSize = 12sp,
+                            "MESH HANDOFF & INSTABILITY LOGS",
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace,
-                            color = CyberCyan
+                            color = CyberRed
                         )
-                        Spacer(modifier = Modifier.height(12dp))
+                    }
 
-                        if (graphLogs.size < 2) {
+                    if (roamLogs.isEmpty() && anomalies.isEmpty()) {
+                        item {
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(120dp),
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(CyberSlate)
+                                    .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(16.dp))
+                                    .padding(24.dp),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Icon(Icons.Default.Info, contentDescription = "info", tint = Color.Gray)
-                                    Spacer(modifier = Modifier.height(4dp))
-                                    Text(
-                                        "Awaiting telemetry entries... Turn on Trace Mode.",
-                                        fontSize = 11sp,
-                                        fontFamily = FontFamily.Monospace,
-                                        color = Color.Gray
-                                    )
-                                }
+                                Text(
+                                    "Scanning stable... No mesh drops or handoffs detected.",
+                                    fontSize = 10.sp,
+                                    color = Color.Gray,
+                                    fontFamily = FontFamily.Monospace
+                                )
                             }
-                        } else {
-                            // Touch responsive Canvas with scrubber!
-                            BoxWithConstraints(
+                        }
+                    } else {
+                        // Display roam list
+                        items(roamLogs.take(3)) { roam ->
+                            Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(140dp)
-                                    .background(CyberBlack)
-                                    .border(1.dp, CyberCharcoal, RoundedCornerShape(4dp))
-                                    .pointerInput(Unit) {
-                                        detectTapGestures(
-                                            onTap = { offset ->
-                                                val colWidth = size.width / graphLogs.size.toFloat()
-                                                val clickedIdx = (offset.x / colWidth).toInt()
-                                                scrubbedIndex = clickedIdx.coerceIn(0, graphLogs.size - 1)
-                                            }
-                                        )
-                                    }
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(CyberSlate)
+                                    .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                val canvasWidth = constraints.maxWidth.toFloat()
-                                val canvasHeight = constraints.maxHeight.toFloat()
-                                val minDbm = -90f
-                                val maxDbm = -30f
-                                val dbmRange = maxDbm - minDbm
-
-                                Canvas(modifier = Modifier.fillMaxSize()) {
-                                    val colWidth = canvasWidth / (graphLogs.size - 1)
-                                    val path = Path()
-
-                                    // Build line path for signal readings
-                                    graphLogs.forEachIndexed { i, log ->
-                                        val x = i * colWidth
-                                        val rssiFraction = (log.rssiDbm.toFloat() - minDbm) / dbmRange
-                                        val y = canvasHeight - (rssiFraction * canvasHeight)
-                                        
-                                        if (i == 0) {
-                                            path.moveTo(x, y)
-                                        } else {
-                                            path.lineTo(x, y)
-                                        }
-                                    }
-
-                                    // Draw background references
-                                    drawLine(
-                                        color = CyberCharcoal.copy(alpha = 0.7f),
-                                        start = Offset(0f, canvasHeight * 0.25f),
-                                        end = Offset(canvasWidth, canvasHeight * 0.25f),
-                                        strokeWidth = 1.dp.toPx()
-                                    )
-                                    drawLine(
-                                        color = CyberCharcoal.copy(alpha = 0.7f),
-                                        start = Offset(0f, canvasHeight * 0.75f),
-                                        end = Offset(canvasWidth, canvasHeight * 0.75f),
-                                        strokeWidth = 1.dp.toPx()
-                                    )
-
-                                    // Draw line path
-                                    drawPath(
-                                        path = path,
-                                        color = CyberGreen,
-                                        style = Stroke(width = 2.dp.toPx())
-                                    )
-
-                                    // Optional scrub crossbar indicators
-                                    scrubbedIndex?.let { idx ->
-                                        if (idx in graphLogs.indices) {
-                                            val log = graphLogs[idx]
-                                            val targetX = idx * colWidth
-                                            val fraction = (log.rssiDbm.toFloat() - minDbm) / dbmRange
-                                            val targetY = canvasHeight - (fraction * canvasHeight)
-
-                                            // Draw slider line
-                                            drawLine(
-                                                color = CyberCyan.copy(alpha = 0.8f),
-                                                start = Offset(targetX, 0f),
-                                                end = Offset(targetX, canvasHeight),
-                                                strokeWidth = 1.5.dp.toPx()
-                                            )
-                                            // Draw highlighted hub
-                                            drawCircle(
-                                                color = CyberCyan,
-                                                radius = 6.dp.toPx(),
-                                                center = Offset(targetX, targetY)
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-
-                            // Render scrub parameters below chart dynamically
-                            val activeIndex = scrubbedIndex ?: (graphLogs.size - 1)
-                            if (activeIndex in graphLogs.indices) {
-                                val activeLog = graphLogs[activeIndex]
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(top = 8dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text(
-                                        "Scrub: SSID [${activeLog.ssid}] | AP [${activeLog.bssid}]",
-                                        fontSize = 11sp,
-                                        fontFamily = FontFamily.Monospace,
-                                        color = Color.LightGray
-                                    )
-                                    Text(
-                                        "Signal: ${activeLog.rssiDbm} dBm",
-                                        fontSize = 11sp,
-                                        fontWeight = FontWeight.Bold,
-                                        fontFamily = FontFamily.Monospace,
-                                        color = if (activeLog.rssiDbm > -50) CyberGreen else if (activeLog.rssiDbm > -75) CyberAmber else CyberRed
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // SECTION 3: AUTOMATED TARGET SPEED TESTING PANEL
-            item {
-                CyberCardGlowPanel {
-                    Column(modifier = Modifier.padding(16dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                "PERFORMANCE SWEEP CORE",
-                                fontSize = 12sp,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Monospace,
-                                color = CyberGreen
-                            )
-                            
-                            // Speed test profile indicators
-                            Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                                listOf("Streaming", "Gaming", "Eco").forEach { profile ->
-                                    val isSelected = selectedProfile == profile
-                                    Box(
-                                        modifier = Modifier
-                                            .padding(horizontal = 4dp)
-                                            .clip(RoundedCornerShape(4dp))
-                                            .background(if (isSelected) CyberGreen.copy(alpha = 0.25f) else CyberCharcoal)
-                                            .border(1.dp, if (isSelected) CyberGreen else Color.Transparent, RoundedCornerShape(4dp))
-                                            .clickable { viewModel.selectedProfile.value = profile }
-                                            .padding(horizontal = 8dp, vertical = 4dp)
-                                    ) {
-                                        Text(
-                                            profile,
-                                            fontSize = 9sp,
-                                            fontFamily = FontFamily.Monospace,
-                                            color = if (isSelected) CyberGreen else Color.White
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(12dp))
-
-                        // Domain Field with Certificate Pinning check
-                        OutlinedTextField(
-                            value = serverUrl,
-                            onValueChange = { serverUrl = it },
-                            label = { Text("Pin Target Server (SSL)", color = Color.Gray, fontSize = 11sp) },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = CyberGreen,
-                                unfocusedBorderColor = CyberCharcoal,
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                cursorColor = CyberGreen
-                            ),
-                            textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                            modifier = Modifier.fillMaxWidth().testTag("server_url_input")
-                        )
-
-                        Spacer(modifier = Modifier.height(12dp))
-
-                        // Action Speed diagnostic
-                        when (val state = speedTestState) {
-                            is SpeedTestUIState.Idle -> {
-                                Button(
-                                    onClick = { viewModel.startManualDiagnostic() },
-                                    colors = ButtonDefaults.buttonColors(containerColor = CyberCyan),
-                                    shape = RoundedCornerShape(4dp),
-                                    modifier = Modifier.fillMaxWidth().testTag("start_test_button")
-                                ) {
-                                    Icon(Icons.Default.Refresh, contentDescription = "Sync", tint = CyberBlack)
-                                    Spacer(modifier = Modifier.width(8dp))
-                                    Text("INITIATE PERFORMANCE SWEEP", fontWeight = FontWeight.Bold, color = CyberBlack)
-                                }
-                            }
-                            is SpeedTestUIState.Testing -> {
                                 Column {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Text(
-                                            state.currentStep,
-                                            fontSize = 11sp,
-                                            fontFamily = FontFamily.Monospace,
-                                            color = CyberGreen
-                                        )
-                                        Text(
-                                            "${state.progressPercent.toInt()}%",
-                                            fontSize = 11sp,
-                                            fontFamily = FontFamily.Monospace,
-                                            color = CyberGreen
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.height(6dp))
-                                    LinearProgressIndicator(
-                                        progress = { (state.progressPercent / 100.0).toFloat() },
-                                        modifier = Modifier.fillMaxWidth().height(4dp).clip(RoundedCornerShape(2dp)),
-                                        color = CyberGreen,
-                                        trackColor = CyberCharcoal,
-                                    )
+                                    Text("HA-Transit: ${roam.fromBssid.takeLast(5)} ➜ ${roam.toBssid.takeLast(5)}", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White, fontFamily = FontFamily.Monospace)
+                                    Text("Latency Delay: ${roam.handoffDurationMs} ms", fontSize = 9.sp, color = Color.Gray, fontFamily = FontFamily.Monospace)
                                 }
-                            }
-                            is SpeedTestUIState.Complete -> {
-                                Column(
+                                Box(
                                     modifier = Modifier
-                                        .clip(RoundedCornerShape(4dp))
-                                        .background(CyberCharcoal)
-                                        .padding(12dp)
-                                ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Text("METRIC RESULTS", fontSize = 10sp, color = CyberGreen, fontFamily = FontFamily.Monospace)
-                                        Text("SECURE PIPELINE OK", fontSize = 10sp, color = CyberCyan, fontFamily = FontFamily.Monospace)
-                                    }
-
-                                    Divider(color = CyberBlack, modifier = Modifier.padding(vertical = 8dp))
-
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Column {
-                                            Text("DOWNLOAD", fontSize = 9sp, color = Color.Gray, fontFamily = FontFamily.Monospace)
-                                            Text("${String.format("%.1f", state.result.downloadMbps)} Mbps", fontSize = 20sp, fontWeight = FontWeight.ExtraBold, color = CyberGreen)
-                                        }
-                                        Column {
-                                            Text("UPLOAD", fontSize = 9sp, color = Color.Gray, fontFamily = FontFamily.Monospace)
-                                            Text("${String.format("%.1f", state.result.uploadMbps)} Mbps", fontSize = 20sp, fontWeight = FontWeight.ExtraBold, color = CyberCyan)
-                                        }
-                                        Column {
-                                            Text("LATENCY (PNG)", fontSize = 9sp, color = Color.Gray, fontFamily = FontFamily.Monospace)
-                                            Text("${String.format("%.0f", state.result.latencyMs)} ms", fontSize = 20sp, fontWeight = FontWeight.ExtraBold, color = CyberAmber)
-                                        }
-                                        Column {
-                                            Text("JITTER", fontSize = 9sp, color = Color.Gray, fontFamily = FontFamily.Monospace)
-                                            Text("${String.format("%.1f", state.result.jitterMs)} ms", fontSize = 20sp, fontWeight = FontWeight.ExtraBold, color = CyberAmber)
-                                        }
-                                    }
-
-                                    Spacer(modifier = Modifier.height(8dp))
-                                    Text(
-                                        "ISP Routing pathway: ${state.result.ispName} (Public IP: ${state.result.publicIp})",
-                                        fontSize = 10sp,
-                                        fontFamily = FontFamily.Monospace,
-                                        color = Color.LightGray
-                                    )
-                                    
-                                    Spacer(modifier = Modifier.height(8dp))
-                                    
-                                    Button(
-                                        onClick = { viewModel.speedTestState.value = SpeedTestUIState.Idle },
-                                        colors = ButtonDefaults.buttonColors(containerColor = CyberCharcoal),
-                                        shape = RoundedCornerShape(4dp),
-                                        border = BorderStroke(1.dp, CyberCyan),
-                                        modifier = Modifier.fillMaxWidth().height(32dp)
-                                    ) {
-                                        Text("RESET TESTER", fontSize = 10sp, color = CyberCyan, fontWeight = FontWeight.Bold)
-                                    }
-                                }
-                            }
-                            is SpeedTestUIState.Error -> {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text("Test failed and bypassed securely: ${state.message}", fontSize = 11sp, color = CyberRed, fontFamily = FontFamily.Monospace)
-                                    Spacer(modifier = Modifier.height(8dp))
-                                    Button(
-                                        onClick = { viewModel.speedTestState.value = SpeedTestUIState.Idle },
-                                        colors = ButtonDefaults.buttonColors(containerColor = CyberCharcoal)
-                                    ) {
-                                        Text("Retry", color = Color.White)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // SECTION 4: MOCK WI-FI CHANNEL SCANNER RADAR OVERLAY
-            item {
-                CyberCardGlowPanel {
-                    Column(modifier = Modifier.padding(16dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                "WI-FI CONGESTION SCANS (BAND OVERLAYS)",
-                                fontSize = 12sp,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Monospace,
-                                color = CyberGreen
-                            )
-                            Row {
-                                listOf("2.4 GHz", "5 GHz", "6 GHz").forEach { band ->
-                                    val isCurrent = activeBand == band
-                                    Box(
-                                        modifier = Modifier
-                                            .padding(horizontal = 2dp)
-                                            .clip(RoundedCornerShape(4dp))
-                                            .background(if (isCurrent) CyberGreen.copy(alpha = 0.2f) else CyberCharcoal)
-                                            .clickable { viewModel.activeBandScanner.value = band }
-                                            .padding(horizontal = 6dp, vertical = 3dp)
-                                    ) {
-                                        Text(band, fontSize = 8sp, color = if (isCurrent) CyberGreen else Color.White, fontFamily = FontFamily.Monospace)
-                                    }
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(12dp))
-
-                        // Drawing live channels parabolics inside Compose Canvas!
-                        val scopedChannels by viewModel.scannedChannels.collectAsState()
-                        Canvas(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(120dp)
-                                .background(CyberBlack)
-                                .border(1.dp, CyberCharcoal)
-                        ) {
-                            val w = size.width
-                            val h = size.height
-
-                            // Draw baseline
-                            drawLine(
-                                color = Color.Gray,
-                                start = Offset(0f, h - 10f),
-                                end = Offset(w, h - 10f),
-                                strokeWidth = 1.dp.toPx()
-                            )
-
-                            // Overlay mock channels curves dynamically
-                            scopedChannels.forEachIndexed { idx, ch ->
-                                val channelCenterFraction = (ch.channel.toFloat()) / 165f // scale width indices
-                                val centerPx = channelCenterFraction * w
-                                val curveWidth = (ch.widthMhz.toFloat() / 160f) * w
-                                
-                                // Height translates directly to Signal dbm levels (optimal -30 is high, bad -90 is low)
-                                val strengthFraction = (ch.signalStrengthDbm.toFloat() + 100f) / 70f
-                                val peakY = h - 10f - (strengthFraction * (h - 20f))
-
-                                val curvePath = Path()
-                                curvePath.moveTo(centerPx - curveWidth / 2f, h - 10f)
-                                curvePath.quadraticTo(
-                                    centerPx, peakY,
-                                    centerPx + curveWidth / 2f, h - 10f
-                                )
-
-                                val overlayColor = if (ch.ssid == "HomeMesh_Secure") CyberGreen else CyberCyan.copy(alpha = 0.4f)
-                                drawPath(
-                                    path = curvePath,
-                                    color = overlayColor,
-                                    style = Stroke(width = 1.5.dp.toPx())
-                                )
-
-                                // Text channel descriptors overlay
-                                drawCircle(
-                                    color = if (ch.ssid == "HomeMesh_Secure") CyberGreen else CyberCyan,
-                                    radius = 3.dp.toPx(),
-                                    center = Offset(centerPx, peakY)
-                                )
-                            }
-                        }
-                        
-                        Spacer(modifier = Modifier.height(8dp))
-                        Text(
-                            "Visual overlays showcase overlapping channels from adjacent BSSIDs. Peak parabola indicates high local signal strength.",
-                            fontSize = 9sp,
-                            fontFamily = FontFamily.Monospace,
-                            color = Color.Gray
-                        )
-                    }
-                }
-            }
-
-            // SECTION 5: AI DIAGNOSTICS & RECOMMENDATIONS TERMINAL
-            item {
-                CyberCardGlowPanel {
-                    Column(modifier = Modifier.padding(16dp)) {
-                        Text(
-                            "AI DIAGNOSTICS DECRYPT (GEMINI LABS)",
-                            fontSize = 12sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace,
-                            color = CyberGreen
-                        )
-                        Spacer(modifier = Modifier.height(10dp))
-
-                        when (val state = aiState) {
-                            is AIDiagnoseUIState.Idle -> {
-                                Text(
-                                    "Analyze your historical connection dBm levels and mesh access point roaming speeds with Gemini-3.5 AI diagnostics.",
-                                    fontSize = 11sp,
-                                    color = Color.LightGray
-                                )
-                                Spacer(modifier = Modifier.height(12dp))
-                                Button(
-                                    onClick = { viewModel.triggerAIDiagnostics() },
-                                    colors = ButtonDefaults.buttonColors(containerColor = CyberCharcoal),
-                                    shape = RoundedCornerShape(4dp),
-                                    border = BorderStroke(1.dp, CyberGreen),
-                                    modifier = Modifier.fillMaxWidth().testTag("ai_diagnose_button")
-                                ) {
-                                    Icon(Icons.Default.Star, contentDescription = "Star", tint = CyberGreen)
-                                    Spacer(modifier = Modifier.width(8dp))
-                                    Text("ASK AI DIAGNOSTICK RECS", color = CyberGreen)
-                                }
-                            }
-                            is AIDiagnoseUIState.Loading -> {
-                                Column(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    CircularProgressIndicator(color = CyberGreen)
-                                    Spacer(modifier = Modifier.height(8dp))
-                                    Text(
-                                        "Decrypting telemetry datasets with Gemini Core...",
-                                        fontSize = 11sp,
-                                        fontFamily = FontFamily.Monospace,
-                                        color = CyberGreen
-                                    )
-                                }
-                            }
-                            is AIDiagnoseUIState.Success -> {
-                                Column(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(4dp))
-                                        .background(CyberBlack)
-                                        .border(1.dp, CyberCharcoal, RoundedCornerShape(4dp))
-                                        .padding(12dp)
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(if (roam.signalDropDbm > 15) CyberRed.copy(alpha = 0.1f) else CyberGreen.copy(alpha = 0.1f))
+                                        .padding(horizontal = 6.dp, vertical = 3.dp)
                                 ) {
                                     Text(
-                                        "SECURE AI RECS REPORT:",
-                                        fontSize = 10sp,
+                                        "-${roam.signalDropDbm} dBm Drop",
+                                        fontSize = 9.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = CyberGreen,
+                                        color = if (roam.signalDropDbm > 15) CyberRed else CyberGreen,
                                         fontFamily = FontFamily.Monospace
                                     )
-                                    Spacer(modifier = Modifier.height(8dp))
-                                    Text(
-                                        text = state.recommendations,
-                                        fontSize = 11sp,
-                                        fontFamily = FontFamily.Monospace,
-                                        color = Color.White
-                                    )
-                                    Spacer(modifier = Modifier.height(12dp))
-                                    Button(
-                                        onClick = { viewModel.aiDiagnoseState.value = AIDiagnoseUIState.Idle },
-                                        colors = ButtonDefaults.buttonColors(containerColor = CyberCharcoal),
-                                        shape = RoundedCornerShape(4dp),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Text("WIPE REPORT CACHE", color = Color.White, fontSize = 10sp)
-                                    }
                                 }
                             }
-                            is AIDiagnoseUIState.Error -> {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text("AI Analysis decapsulation error: ${state.message}", fontSize = 11sp, color = CyberRed, fontFamily = FontFamily.Monospace)
-                                    Spacer(modifier = Modifier.height(8dp))
-                                    Button(
-                                        onClick = { viewModel.aiDiagnoseState.value = AIDiagnoseUIState.Idle },
-                                        colors = ButtonDefaults.buttonColors(containerColor = CyberCharcoal)
-                                    ) {
-                                        Text("Retry Connection", color = Color.White)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // SECTION 6: Mesh BSSID Roaming Transit & Anomalies Log Table
-            item {
-                CyberCardGlowPanel {
-                    Column(modifier = Modifier.padding(16dp)) {
-                        Text(
-                            "MESH ROAMING TRANSITS & ANOMALIES LOGS",
-                            fontSize = 12sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace,
-                            color = CyberGreen
-                        )
-                        Spacer(modifier = Modifier.height(10dp))
-
-                        if (roamLogs.isEmpty() && anomalies.isEmpty()) {
-                            Text(
-                                "No roaming transitions or anomalies captured. Keep logging active.",
-                                fontSize = 11sp,
-                                color = Color.Gray,
-                                fontFamily = FontFamily.Monospace
-                            )
-                        } else {
-                            // Roam Hops List
-                            if (roamLogs.isNotEmpty()) {
-                                Text("Roam mesh AP transits found:", fontSize = 10sp, color = CyberCyan, fontFamily = FontFamily.Monospace)
-                                Spacer(modifier = Modifier.height(4dp))
-                                roamLogs.take(4).forEach { log ->
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(vertical = 4dp)
-                                            .clip(RoundedCornerShape(4dp))
-                                            .background(CyberCharcoal)
-                                            .padding(8dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Column {
-                                            Text("Transit AP: ${log.fromBssid.takeLast(5)} ➜ ${log.toBssid.takeLast(5)}", fontSize = 10sp, color = Color.White, fontFamily = FontFamily.Monospace)
-                                            Text("Handoff delay: ${log.handoffDurationMs} ms", fontSize = 9sp, color = Color.LightGray, fontFamily = FontFamily.Monospace)
-                                        }
-                                        Text(
-                                            "-${log.signalDropDbm} dBm Drop",
-                                            fontSize = 10sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (log.signalDropDbm > 15) CyberRed else CyberGreen,
-                                            fontFamily = FontFamily.Monospace
-                                        )
-                                    }
-                                }
-                                Spacer(modifier = Modifier.height(8dp))
-                            }
-
-                            // Anomalies List
-                            if (anomalies.isNotEmpty()) {
-                                Text("Instability logs found:", fontSize = 10sp, color = CyberAmber, fontFamily = FontFamily.Monospace)
-                                Spacer(modifier = Modifier.height(4dp))
-                                anomalies.take(4).forEach { log ->
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(vertical = 4dp)
-                                            .clip(RoundedCornerShape(4dp))
-                                            .background(CyberCharcoal)
-                                            .padding(8dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(log.type, fontSize = 10sp, fontWeight = FontWeight.Bold, color = CyberAmber, fontFamily = FontFamily.Monospace)
-                                            Text(log.description, fontSize = 9sp, color = Color.White, fontFamily = FontFamily.Monospace)
-                                        }
-                                        Text(
-                                            log.severity,
-                                            fontSize = 9sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (log.severity == "HIGH") CyberRed else CyberAmber,
-                                            fontFamily = FontFamily.Monospace,
-                                            modifier = Modifier.padding(start = 8dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // SECTION 7: DATA BUDGET CONTROLLER & AES ENCRYPT EXPORT
-            item {
-                CyberCardGlowPanel {
-                    Column(modifier = Modifier.padding(16dp)) {
-                        Text(
-                            "DATA BUDGETS & CIPHER LOGS EXPORTS",
-                            fontSize = 12sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace,
-                            color = CyberGreen
-                        )
-                        Spacer(modifier = Modifier.height(12dp))
-
-                        // Data Cap budget sliders
-                        val capLimit = dataCap?.maxBgDataMb ?: 500
-                        val capUsed = dataCap?.currentDataUsedMb ?: 0.0
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Monthly Background Speed tests budget quota cap:", fontSize = 10sp, color = Color.LightGray)
-                            Text("$capLimit MB Limit", fontSize = 10sp, fontWeight = FontWeight.Bold, color = CyberGreen)
                         }
                         
-                        Slider(
-                            value = capLimit.toFloat(),
-                            onValueChange = { viewModel.configureDataCap(it.toInt()) },
-                            valueRange = 100f..2000f,
-                            colors = SliderDefaults.colors(
-                                thumbColor = CyberGreen,
-                                activeTrackColor = CyberGreen,
-                                inactiveTrackColor = CyberCharcoal
-                            ),
-                            modifier = Modifier.fillMaxWidth().testTag("data_budget_slider")
-                        )
-
-                        Spacer(modifier = Modifier.height(6dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Current monthly allocated consumption:", fontSize = 10sp, color = Color.Gray)
-                            Text("${String.format("%.1f", capUsed)} MB Used", fontSize = 10sp, fontWeight = FontWeight.Bold, color = CyberCyan)
-                        }
-
-                        Divider(color = CyberCharcoal, modifier = Modifier.padding(vertical = 12dp))
-
-                        // Encrypted CSV export parameters
-                        Text(
-                            "Zero-Trust symmetric export. Set an AES 128 passphrase to encrypt standard telemetry databases before exporting.",
-                            fontSize = 9sp,
-                            color = Color.LightGray
-                        )
-                        Spacer(modifier = Modifier.height(8dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8dp)
-                        ) {
-                            OutlinedTextField(
-                                value = encryptPasscode,
-                                onValueChange = { encryptPasscode = it },
-                                label = { Text("AES Key Passphrase", color = Color.Gray, fontSize = 11sp) },
-                                singleLine = true,
-                                visualTransformation = PasswordVisualTransformation(),
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = CyberGreen,
-                                    unfocusedBorderColor = CyberCharcoal,
-                                    focusedTextColor = Color.White,
-                                    unfocusedTextColor = Color.White
-                                ),
-                                textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                                modifier = Modifier.weight(1f).testTag("encryption_passcode_input")
-                            )
-
-                            Button(
-                                onClick = {
-                                    if (encryptPasscode.length >= 4) {
-                                        viewModel.exportEncryptedCSV(encryptPasscode)
-                                        Toast.makeText(context, "Encrypted secure export queued.", Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        Toast.makeText(context, "Passphrase must be >= 4 characters.", Toast.LENGTH_SHORT).show()
-                                    }
-                                },
-                                shape = RoundedCornerShape(4dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = CyberGreen),
-                                modifier = Modifier.align(Alignment.CenterVertically).testTag("export_logs_button")
+                        // Anomalies list
+                        items(anomalies.take(3)) { anomaly ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(CyberSlate)
+                                    .border(1.dp, CyberRed.copy(alpha = 0.1f), RoundedCornerShape(12.dp))
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Default.Share, contentDescription = "Share", tint = CyberBlack)
-                                Spacer(modifier = Modifier.width(4dp))
-                                Text("EXPORT", color = CyberBlack, fontWeight = FontWeight.Bold, fontSize = 11sp)
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(anomaly.type, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = CyberAmber, fontFamily = FontFamily.Monospace)
+                                    Text(anomaly.description, fontSize = 9.sp, color = Color.White.copy(alpha = 0.7f))
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(if (anomaly.severity == "HIGH") CyberRed.copy(alpha = 0.1f) else CyberAmber.copy(alpha = 0.1f))
+                                        .padding(horizontal = 6.dp, vertical = 3.dp)
+                                ) {
+                                    Text(
+                                        anomaly.severity,
+                                        fontSize = 8.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (anomaly.severity == "HIGH") CyberRed else CyberAmber,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
                             }
                         }
                     }
+                    
+                    item {
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
                 }
-            }
-            
-            // Footer spacer
-            item {
-                Spacer(modifier = Modifier.height(32dp))
+
+                "Secure" -> {
+                    // TAB 4: DATA BUDGETS & DECRYPTION CSV EXPORTS
+                    item {
+                        Text(
+                            "DATA BUDGET CONTROL & SYM-CIPHER EXPORTS",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            color = CyberGreen,
+                            letterSpacing = 1.sp
+                        )
+                    }
+
+                    item {
+                        val maxMb = dataCap?.maxBgDataMb ?: 500
+                        val usedMb = dataCap?.currentDataUsedMb ?: 0.0
+                        
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(24.dp))
+                                .background(CyberSlate)
+                                .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(24.dp))
+                                .padding(20.dp)
+                        ) {
+                            Text(
+                                "MONTHLY SPEETEST DATA QUOTA BUDGET",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White.copy(alpha = 0.5f),
+                                fontFamily = FontFamily.Monospace
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Telemetry Quota Cap Limit:", fontSize = 11.sp, color = Color.White)
+                                Text("$maxMb MB Limit", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = CyberGreen)
+                            }
+                            
+                            Slider(
+                                value = maxMb.toFloat(),
+                                onValueChange = { viewModel.configureDataCap(it.toInt()) },
+                                valueRange = 100f..2000f,
+                                colors = SliderDefaults.colors(
+                                    thumbColor = CyberGreen,
+                                    activeTrackColor = CyberGreen,
+                                    inactiveTrackColor = CyberCharcoal
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("data_budget_slider")
+                            )
+                            
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Consumed speedtest volume:", fontSize = 11.sp, color = Color.Gray)
+                                Text("${String.format("%.1f", usedMb)} MB Used", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = CyberCyan)
+                            }
+                        }
+                    }
+
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(24.dp))
+                                .background(CyberSlate)
+                                .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(24.dp))
+                                .padding(20.dp)
+                        ) {
+                            Text(
+                                "ZERO-TRUST SECURE TELEMETRY EXPORT (AES-128)",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = CyberGreen
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                "Forces AES-128 symmetric block-cipher encryption on the exported CSV payload. Set an encryption password of at least 4 characters.",
+                                fontSize = 11.sp,
+                                color = Color.LightGray,
+                                lineHeight = 16.sp
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedTextField(
+                                    value = encryptPasscode,
+                                    onValueChange = { encryptPasscode = it },
+                                    label = { Text("AES Key Passphrase", color = Color.Gray, fontSize = 11.sp) },
+                                    singleLine = true,
+                                    visualTransformation = PasswordVisualTransformation(),
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = CyberGreen,
+                                        unfocusedBorderColor = CyberCharcoal,
+                                        focusedTextColor = Color.White,
+                                        unfocusedTextColor = Color.White
+                                    ),
+                                    textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("encryption_passcode_input")
+                                )
+
+                                Button(
+                                    onClick = {
+                                        if (encryptPasscode.length >= 4) {
+                                            viewModel.exportEncryptedCSV(encryptPasscode)
+                                            Toast.makeText(context, "Encrypted secure export queued.", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            Toast.makeText(context, "Passphrase must be >= 4 characters.", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = CyberGreen),
+                                    modifier = Modifier
+                                        .align(Alignment.CenterVertically)
+                                        .height(54.dp)
+                                        .testTag("export_logs_button")
+                                ) {
+                                    Icon(Icons.Default.Share, contentDescription = "Share", tint = CyberBlack)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("EXPORT", color = CyberBlack, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                }
+                            }
+                        }
+                    }
+                    
+                    item {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(1.dp, CyberRed.copy(alpha = 0.15f), RoundedCornerShape(24.dp)),
+                            colors = CardDefaults.cardColors(containerColor = CyberSlate),
+                            shape = RoundedCornerShape(24.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(20.dp)) {
+                                Text(
+                                    "LOCAL DESTRUCT PROTOCOL",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = CyberRed
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    "Instantly wipes all tables of the local SQLite encrypted database. This operation is irreversible.",
+                                    fontSize = 11.sp,
+                                    color = Color.LightGray
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Button(
+                                    onClick = {
+                                        viewModel.clearTelemetryHistory()
+                                        Toast.makeText(context, "Telemetry history wiped completely.", Toast.LENGTH_SHORT).show()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = CyberRed),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("DESTROY TELEMETRY HISTORY", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                                }
+                            }
+                        }
+                    }
+                    
+                    item {
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
+                }
             }
         }
     }
 }
 
-// A beautiful glassmorphism styled cyberpunk dashboard panel
 @Composable
-fun CyberCardGlowPanel(content: @Composable () -> Unit) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .drawBehind {
-                // Subtle radial glow layout behind the cards
-                drawRoundRect(
-                    color = CyberSlate,
-                    size = size,
-                    cornerRadius = CornerRadius(12dp.toPx(), 12dp.toPx())
-                )
-            }
-            .border(1.dp, CyberCharcoal, RoundedCornerShape(12dp)),
-        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+fun MetadataRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        content()
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            color = Color.White.copy(alpha = 0.5f),
+            fontFamily = FontFamily.Monospace
+        )
+        Text(
+            text = value,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White,
+            fontFamily = FontFamily.Monospace
+        )
+    }
+}
+
+@Composable
+fun DiagnosticDisplayMetric(label: String, value: String, unit: String, color: Color) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = label,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White.copy(alpha = 0.4f),
+            fontFamily = FontFamily.Monospace
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(
+                text = value,
+                fontSize = 22.sp,
+                color = color,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace
+            )
+            Spacer(modifier = Modifier.width(2.dp))
+            Text(
+                text = unit,
+                fontSize = 10.sp,
+                color = Color.White.copy(alpha = 0.6f),
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.padding(bottom = 3.dp)
+            )
+        }
+    }
+}
+
+// Helpers
+private fun getRssiCategory(rssi: Int): String {
+    return when {
+        rssi >= 0 -> "OFFLINE"
+        rssi >= -50 -> "OPTIMAL (EXCELLENT)"
+        rssi >= -65 -> "GOOD (STABLE)"
+        rssi >= -80 -> "FAIR (MED CONGESTION)"
+        else -> "CRITICAL (DROPPING PACKETS)"
+    }
+}
+
+private fun offsetBeforeLayout(size: Size): Offset {
+    return Offset(size.width * 0.5f, size.height * 0.45f)
+}
+
+private fun getActiveBarsCount(rssi: Int): Int {
+    return when {
+        rssi >= -40 -> 8
+        rssi >= -48 -> 7
+        rssi >= -55 -> 6
+        rssi >= -62 -> 5
+        rssi >= -70 -> 4
+        rssi >= -78 -> 3
+        rssi >= -85 -> 2
+        else -> 1
     }
 }

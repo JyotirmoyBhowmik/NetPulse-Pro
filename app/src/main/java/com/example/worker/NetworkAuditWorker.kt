@@ -8,6 +8,8 @@ import com.example.data.AnomalyLog
 import com.example.data.AppDatabase
 import com.example.data.NetworkLog
 import com.example.network.NetworkClient
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.CancellationException
 
 class NetworkAuditWorker(
     appContext: Context,
@@ -25,14 +27,10 @@ class NetworkAuditWorker(
             var currentUsedMb = 0.0
 
             // Query data cap
-            kotlinx.coroutines.flow.firstOrNull {
-                dao.getDataCap().collect { cap ->
-                    if (cap != null) {
-                        budgetLimitMb = cap.maxBgDataMb
-                        currentUsedMb = cap.currentDataUsedMb
-                    }
-                }
-                true
+            val cap = dao.getDataCap().firstOrNull()
+            if (cap != null) {
+                budgetLimitMb = cap.maxBgDataMb
+                currentUsedMb = cap.currentDataUsedMb
             }
 
             if (currentUsedMb >= budgetLimitMb) {
