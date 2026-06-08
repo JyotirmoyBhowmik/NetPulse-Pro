@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Cyber Tactical Radar Target Grid - Centered in safe zone -->
+    
+    <!-- Outer bounds circuit sweep ring -->
+    <path
+        android:pathData="M 54,24 A 30,30 0 1,1 54,84 A 30,30 0 1,1 54,24 Z"
+        android:strokeColor="#00FF66"
+        android:strokeWidth="1.5"
+        android:fillColor="#00000000"/>
+        
+    <!-- Intermediate circuit sweep ring -->
+    <path
+        android:pathData="M 54,34 A 20,20 0 1,1 54,74 A 20,20 0 1,1 54,34 Z"
+        android:strokeColor="#00E5FF"
+        android:strokeWidth="1.2"
+        android:fillColor="#00000000"/>
+
+    <!-- Focal center sweep ring -->
+    <path
+        android:pathData="M 54,44 A 10,10 0 1,1 54,64 A 10,10 0 1,1 54,44 Z"
+        android:strokeColor="#00FF66"
+        android:strokeWidth="1.0"
+        android:fillColor="#00000000"/>
+
+    <!-- Crosshair Target lines -->
+    <path
+        android:pathData="M 54,20 L 54,88"
+        android:strokeColor="#00FF66"
+        android:strokeWidth="1.0"/>
+        
+    <path
+        android:pathData="M 20,54 L 88,54"
+        android:strokeColor="#00FF66"
+        android:strokeWidth="1.0"/>
+        
+    <!-- Active sweep sweep-angle line -->
+    <path
+        android:pathData="M 54,54 L 75,33"
+        android:strokeColor="#00E5FF"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"/>
+</vector>

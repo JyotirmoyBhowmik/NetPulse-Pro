@@ -1,0 +1,6 @@
+{
+  "name": "NetPulse Pro",
+  "description": "Enterprise-grade, ultra-secure network performance scanner and Wi-Fi signal diagnostics suite.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
