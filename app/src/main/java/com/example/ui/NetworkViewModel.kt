@@ -59,6 +59,15 @@ class NetworkViewModel(
     // Interactive custom state fields
     val speedTestState = MutableStateFlow<SpeedTestUIState>(SpeedTestUIState.Idle)
     val aiDiagnoseState = MutableStateFlow<AIDiagnoseUIState>(AIDiagnoseUIState.Idle)
+
+    // --- Real-Time Ping Utility States ---
+    val pingHost = MutableStateFlow("google.com")
+    val isPinging = MutableStateFlow(false)
+    val pingLogsState = MutableStateFlow<List<String>>(emptyList())
+    val pingLatencyHistory = MutableStateFlow<List<Float>>(emptyList())
+    val pingSuccessCount = MutableStateFlow(0)
+    val pingFailureCount = MutableStateFlow(0)
+    val pingCurrentLatency = MutableStateFlow<Float?>(null)
     
     val selectedProfile = MutableStateFlow("Streaming") // Streaming, Gaming, Eco
     val continuousTrackingActive = MutableStateFlow(false)
@@ -158,6 +167,141 @@ class NetworkViewModel(
 
     fun consumeExportedFile() {
         exportedFileState.value = null
+    }
+
+    // --- Real-Time Ping Utility Core Logic ---
+    fun startPing() {
+        val host = pingHost.value.trim()
+        if (host.isEmpty()) return
+
+        isPinging.value = true
+        pingLogsState.value = listOf("Initializing ping sequence to $host...")
+        pingLatencyHistory.value = emptyList()
+        pingSuccessCount.value = 0
+        pingFailureCount.value = 0
+        pingCurrentLatency.value = null
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                // Command line ping sweep: -c 6 (6 packet count), -i 0.6 (0.6s packet interval)
+                val process = Runtime.getRuntime().exec("ping -c 6 -i 0.6 $host")
+                val reader = java.io.BufferedReader(java.io.InputStreamReader(process.inputStream))
+                var line: String?
+                var isFirstLine = true
+
+                while (isPinging.value) {
+                    line = reader.readLine()
+                    if (line == null) break
+
+                    val currentLine = line
+                    var parsedLatency: Float? = null
+                    
+                    if (currentLine.contains("time=")) {
+                        val timePart = currentLine.substringAfter("time=")
+                        val msValStr = timePart.substringBefore(" ms").substringBefore("ms").trim()
+                        parsedLatency = msValStr.toFloatOrNull()
+                    }
+
+                    withContext(Dispatchers.Main) {
+                        if (parsedLatency != null) {
+                            pingCurrentLatency.value = parsedLatency
+                            pingLatencyHistory.value = (pingLatencyHistory.value + parsedLatency).takeLast(15)
+                            pingSuccessCount.value = pingSuccessCount.value + 1
+                            pingLogsState.value = pingLogsState.value + "↳ ping seq=${pingSuccessCount.value}: time=$parsedLatency ms"
+                        } else {
+                            if (currentLine.startsWith("PING") && isFirstLine) {
+                                pingLogsState.value = pingLogsState.value + "Socket connection established (Resolved IP Address)."
+                                isFirstLine = false
+                            } else if (currentLine.contains("statistics") || currentLine.contains("packets transmitted")) {
+                                pingLogsState.value = pingLogsState.value + currentLine
+                            }
+                        }
+                    }
+                }
+
+                val exitCode = process.waitFor()
+                withContext(Dispatchers.Main) {
+                    if (pingSuccessCount.value == 0) {
+                        pingLogsState.value = pingLogsState.value + "ICMP Ping blocked/restricted. Escalating connection to TCP port 80/443..."
+                        runTcpSocketPing(host)
+                    } else {
+                        pingLogsState.value = pingLogsState.value + "ICMP Scan completed with exit code $exitCode."
+                        isPinging.value = false
+                    }
+                }
+
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    pingLogsState.value = pingLogsState.value + "Environment error: ${e.localizedMessage}. Trying TCP handshake..."
+                }
+                runTcpSocketPing(host)
+            }
+        }
+    }
+
+    private suspend fun runTcpSocketPing(host: String) {
+        val cleanHost = host.substringAfter("://").substringBefore("/").substringBefore(":")
+        
+        var successCount = 0
+        var failureCount = 0
+
+        for (i in 1..6) {
+            if (!isPinging.value) break
+            val startTime = System.currentTimeMillis()
+            var isSuccess = false
+            
+            try {
+                // Try standard HTTPS secure handshake port first
+                val address = java.net.InetAddress.getByName(cleanHost)
+                val socketAddress = java.net.InetSocketAddress(address, 443)
+                val socket = java.net.Socket()
+                socket.connect(socketAddress, 1500) // 1.5 second timeout
+                socket.close()
+                isSuccess = true
+            } catch (e: Exception) {
+                // Symmetrical fall back to HTTP default port 80
+                try {
+                    val address = java.net.InetAddress.getByName(cleanHost)
+                    val socketAddress = java.net.InetSocketAddress(address, 80)
+                    val socket = java.net.Socket()
+                    socket.connect(socketAddress, 1500)
+                    socket.close()
+                    isSuccess = true
+                } catch (e2: Exception) {
+                    isSuccess = false
+                }
+            }
+
+            val duration = (System.currentTimeMillis() - startTime).toFloat()
+
+            if (isPinging.value) {
+                withContext(Dispatchers.Main) {
+                    if (isSuccess) {
+                        successCount++
+                        pingSuccessCount.value = successCount
+                        pingCurrentLatency.value = duration
+                        pingLatencyHistory.value = (pingLatencyHistory.value + duration).takeLast(15)
+                        pingLogsState.value = pingLogsState.value + "↳ TCP handshake seq=$successCount: port 80/443 resolved. latency=$duration ms"
+                    } else {
+                        failureCount++
+                        pingFailureCount.value = failureCount
+                        pingLogsState.value = pingLogsState.value + "↳ TCP connection seq=$i failed: host unreachable or connection rejected."
+                    }
+                }
+            }
+
+            kotlinx.coroutines.delay(600)
+        }
+
+        withContext(Dispatchers.Main) {
+            pingLogsState.value = pingLogsState.value + "TCP Handshake Sweep Terminated."
+            isPinging.value = false
+        }
+    }
+
+    fun stopPing() {
+        isPinging.value = false
+        pingLogsState.value = pingLogsState.value + "Ping sweep halted by user."
     }
 
     // Dynamic list calculations for visual graphing

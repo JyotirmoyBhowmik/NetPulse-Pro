@@ -72,6 +72,15 @@ fun DashboardScreen(viewModel: NetworkViewModel) {
     val exportedFile by viewModel.exportedFileState.collectAsState()
     val channels by viewModel.scannedChannels.collectAsState()
 
+    // Observe ping state properties
+    val pingHost by viewModel.pingHost.collectAsState()
+    val isPinging by viewModel.isPinging.collectAsState()
+    val pingLogs by viewModel.pingLogsState.collectAsState()
+    val pingLatencyHistory by viewModel.pingLatencyHistory.collectAsState()
+    val pingSuccessCount by viewModel.pingSuccessCount.collectAsState()
+    val pingFailureCount by viewModel.pingFailureCount.collectAsState()
+    val pingCurrentLatency by viewModel.pingCurrentLatency.collectAsState()
+
     // Form inputs
     var encryptPasscode by remember { mutableStateOf("") }
     
@@ -825,7 +834,410 @@ fun DashboardScreen(viewModel: NetworkViewModel) {
                             }
                         }
                     }
-                    
+
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(32.dp))
+                                .background(CyberCharcoal)
+                                .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(32.dp))
+                                .padding(24.dp)
+                        ) {
+                            // Header
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Info,
+                                        contentDescription = "Ping Icon",
+                                        tint = CyberGreen,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Text(
+                                        "ICMP & TCP PING UTILITY",
+                                        style = MaterialTheme.typography.titleSmall.copy(
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White
+                                        )
+                                    )
+                                }
+                                
+                                // Connection status pill indicator
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(
+                                            if (isPinging) CyberAmber.copy(alpha = 0.15f)
+                                            else CyberGreen.copy(alpha = 0.1f)
+                                        )
+                                        .border(
+                                            1.dp,
+                                            if (isPinging) CyberAmber.copy(alpha = 0.4f)
+                                            else CyberGreen.copy(alpha = 0.2f),
+                                            RoundedCornerShape(12.dp)
+                                        )
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = if (isPinging) "BROADCASTING" else "IDLE MODE",
+                                        color = if (isPinging) CyberAmber else CyberGreen,
+                                        fontSize = 8.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                            }
+                            
+                            Spacer(modifier = Modifier.height(12.dp))
+                            
+                            Text(
+                                text = "Diagnose real-time latency, host reachability, packet delivery, and connection health directly from this node.",
+                                fontSize = 11.sp,
+                                color = Color.Gray,
+                                lineHeight = 16.sp
+                            )
+                            
+                            Spacer(modifier = Modifier.height(18.dp))
+                            
+                            // Hostname Input Field Custom
+                            OutlinedTextField(
+                                value = pingHost,
+                                onValueChange = { viewModel.pingHost.value = it },
+                                label = {
+                                    Text(
+                                        "Target Host or IP Address",
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 11.sp
+                                    )
+                                },
+                                placeholder = {
+                                    Text(
+                                        "e.g. google.com or 1.1.1.1",
+                                        color = Color.White.copy(alpha = 0.3f),
+                                        fontSize = 12.sp
+                                    )
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("ping_host_input"),
+                                shape = RoundedCornerShape(14.dp),
+                                singleLine = true,
+                                textStyle = LocalTextStyle.current.copy(
+                                    color = Color.White,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 13.sp
+                                ),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = CyberGreen,
+                                    unfocusedBorderColor = Color.White.copy(alpha = 0.1f),
+                                    focusedLabelColor = CyberGreen,
+                                    unfocusedLabelColor = Color.LightGray
+                                ),
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Search,
+                                        contentDescription = "Search",
+                                        tint = Color.Gray,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            )
+                            
+                            Spacer(modifier = Modifier.height(16.dp))
+                            
+                            // Buttons row
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Button(
+                                    onClick = { viewModel.startPing() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = CyberGreen),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(46.dp)
+                                        .testTag("start_ping_button"),
+                                    enabled = !isPinging && pingHost.trim().isNotEmpty()
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.PlayArrow,
+                                            contentDescription = "Play",
+                                            tint = CyberBlack,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            "EXECUTE SWEEP",
+                                            color = CyberBlack,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            fontFamily = FontFamily.Monospace
+                                        )
+                                    }
+                                }
+                                
+                                if (isPinging) {
+                                    Button(
+                                        onClick = { viewModel.stopPing() },
+                                        colors = ButtonDefaults.buttonColors(containerColor = CyberRed),
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(46.dp)
+                                            .testTag("stop_ping_button")
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Close,
+                                                contentDescription = "Stop",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                "ABORT",
+                                                color = Color.White,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                fontFamily = FontFamily.Monospace
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // Real-Time Results Block
+                            if (pingLogs.isNotEmpty() || isPinging || pingCurrentLatency != null) {
+                                Spacer(modifier = Modifier.height(20.dp))
+                                
+                                // Miniature Metrics Grid
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    val currentLat = pingCurrentLatency
+                                    val latText = if (currentLat != null) "${currentLat.toInt()} ms" else "--"
+                                    val latColor = when {
+                                        currentLat == null -> Color.White
+                                        currentLat < 50f -> CyberGreen
+                                        currentLat < 150f -> CyberAmber
+                                        else -> CyberRed
+                                    }
+                                    
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(14.dp))
+                                            .background(CyberBlack.copy(alpha = 0.4f))
+                                            .border(1.dp, Color.White.copy(alpha = 0.03f), RoundedCornerShape(14.dp))
+                                            .padding(12.dp)
+                                    ) {
+                                        Column {
+                                            Text(
+                                                "RTT LATENCY",
+                                                fontSize = 8.sp,
+                                                color = Color.Gray,
+                                                fontWeight = FontWeight.Bold,
+                                                fontFamily = FontFamily.Monospace
+                                            )
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(
+                                                text = latText,
+                                                fontSize = 18.sp,
+                                                color = latColor,
+                                                fontWeight = FontWeight.Bold,
+                                                fontFamily = FontFamily.Monospace
+                                            )
+                                        }
+                                    }
+
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(14.dp))
+                                            .background(CyberBlack.copy(alpha = 0.4f))
+                                            .border(1.dp, Color.White.copy(alpha = 0.03f), RoundedCornerShape(14.dp))
+                                            .padding(12.dp)
+                                    ) {
+                                        Column {
+                                            Text(
+                                                "SUCCESS",
+                                                fontSize = 8.sp,
+                                                color = Color.Gray,
+                                                fontWeight = FontWeight.Bold,
+                                                fontFamily = FontFamily.Monospace
+                                            )
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(
+                                                text = "$pingSuccessCount pkts",
+                                                fontSize = 18.sp,
+                                                color = CyberGreen,
+                                                fontWeight = FontWeight.Bold,
+                                                fontFamily = FontFamily.Monospace
+                                            )
+                                        }
+                                    }
+                                    
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(14.dp))
+                                            .background(CyberBlack.copy(alpha = 0.4f))
+                                            .border(1.dp, Color.White.copy(alpha = 0.03f), RoundedCornerShape(14.dp))
+                                            .padding(12.dp)
+                                    ) {
+                                        Column {
+                                            Text(
+                                                "LOSS",
+                                                fontSize = 8.sp,
+                                                color = Color.Gray,
+                                                fontWeight = FontWeight.Bold,
+                                                fontFamily = FontFamily.Monospace
+                                            )
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(
+                                                text = "$pingFailureCount pkts",
+                                                fontSize = 18.sp,
+                                                color = if (pingFailureCount > 0) CyberRed else Color.Gray,
+                                                fontWeight = FontWeight.Bold,
+                                                fontFamily = FontFamily.Monospace
+                                            )
+                                        }
+                                    }
+                                }
+                                
+                                // Real-Time Latency History Line Sparkline Spark chart
+                                if (pingLatencyHistory.isNotEmpty()) {
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(80.dp)
+                                            .clip(RoundedCornerShape(14.dp))
+                                            .background(CyberBlack.copy(alpha = 0.6f))
+                                            .border(1.dp, Color.White.copy(alpha = 0.02f), RoundedCornerShape(14.dp))
+                                            .padding(top = 16.dp, bottom = 8.dp, start = 8.dp, end = 8.dp)
+                                    ) {
+                                        Canvas(modifier = Modifier.fillMaxSize()) {
+                                            val maxVal = (pingLatencyHistory.maxOrNull() ?: 100f).coerceAtLeast(30f) * 1.15f
+                                            val length = pingLatencyHistory.size
+                                            val w = size.width
+                                            val h = size.height
+                                            
+                                            // Draw reference grids
+                                            drawLine(
+                                                color = Color.White.copy(alpha = 0.05f),
+                                                start = Offset(0f, h * 0.5f),
+                                                end = Offset(w, h * 0.5f),
+                                                strokeWidth = 1f,
+                                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
+                                            )
+                                            
+                                            val pathLine = Path()
+                                            if (length > 1) {
+                                                pingLatencyHistory.forEachIndexed { idx, value ->
+                                                    val xPos = (idx.toFloat() / (length - 1)) * w
+                                                    val yPos = h - ((value / maxVal) * h).coerceIn(4f, h - 4f)
+                                                    
+                                                    if (idx == 0) {
+                                                        pathLine.moveTo(xPos, yPos)
+                                                    } else {
+                                                        pathLine.lineTo(xPos, yPos)
+                                                    }
+                                                }
+                                                
+                                                drawPath(
+                                                    path = pathLine,
+                                                    color = CyberCyan,
+                                                    style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+                                                )
+                                                
+                                                // Highlight last point
+                                                val lastIdx = length - 1
+                                                val xPos = w
+                                                val yVal = pingLatencyHistory.last()
+                                                val yPos = h - ((yVal / maxVal) * h).coerceIn(4f, h - 4f)
+                                                drawCircle(
+                                                    color = CyberCyan,
+                                                    radius = 4.dp.toPx(),
+                                                    center = Offset(xPos, yPos)
+                                                )
+                                                drawCircle(
+                                                    color = CyberCyan.copy(alpha = 0.4f),
+                                                    radius = 8.dp.toPx(),
+                                                    center = Offset(xPos, yPos)
+                                                )
+                                            }
+                                        }
+                                        
+                                        Text(
+                                            "LATENCY PULSE MONITOR",
+                                            fontSize = 7.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = CyberCyan,
+                                            modifier = Modifier.padding(start = 4.dp).align(Alignment.TopStart)
+                                        )
+                                    }
+                                }
+                                
+                                Spacer(modifier = Modifier.height(14.dp))
+                                
+                                // Terminal output logger console
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(120.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(CyberBlack)
+                                        .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+                                        .padding(8.dp)
+                                ) {
+                                    val scrollState = rememberScrollState()
+                                    
+                                    // Scroll to bottom automatically as log lines enter
+                                    LaunchedEffect(pingLogs.size) {
+                                        scrollState.animateScrollTo(scrollState.maxValue)
+                                    }
+                                    
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .verticalScroll(scrollState)
+                                    ) {
+                                        pingLogs.forEach { logLine ->
+                                            Text(
+                                                text = logLine,
+                                                color = if (logLine.contains("failed") || logLine.contains("error")) CyberRed else if (logLine.contains("resolved") || logLine.contains("latency")) CyberGreen else Color.LightGray,
+                                                fontSize = 9.sp,
+                                                fontFamily = FontFamily.Monospace,
+                                                lineHeight = 12.sp,
+                                                modifier = Modifier.padding(bottom = 3.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // Historical diagnostics stored lists
                     item {
                         Text(
