@@ -49,7 +49,7 @@
 
         <!-- Continuous Tracking Foreground Service -->
         <service
-            android:name="com.example.service.NetworkMonitoringService"
+            android:name="com.aistudio.netpulse.qpzwtr.service.NetworkMonitoringService"
             android:foregroundServiceType="specialUse"
             android:exported="false">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
@@ -58,7 +58,7 @@
 
         <!-- Quick Settings Tile Service -->
         <service
-            android:name="com.example.tile.NetworkTileService"
+            android:name="com.aistudio.netpulse.qpzwtr.tile.NetworkTileService"
             android:label="NetPulse Test"
             android:icon="@android:drawable/ic_menu_compass"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
@@ -70,7 +70,7 @@
 
         <!-- Dashboard Home AppWidget Provider -->
         <receiver
-            android:name="com.example.widget.NetPulseWidgetProvider"
+            android:name="com.aistudio.netpulse.qpzwtr.widget.NetPulseWidgetProvider"
             android:label="NetPulse Monitor"
             android:exported="true">
             <intent-filter>

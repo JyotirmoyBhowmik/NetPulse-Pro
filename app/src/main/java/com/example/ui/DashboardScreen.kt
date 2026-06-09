@@ -50,6 +50,26 @@ import kotlinx.coroutines.launch
 import java.io.File
 import kotlin.math.sin
 
+// Shadow Color object to dynamically translate existing dark-themed hardcoded colors to white-based light colors
+@Suppress("ClassName")
+private object Color {
+    val White = androidx.compose.ui.graphics.Color(0xFF0F172A) // mapped to rich dark slate text
+    val Gray = androidx.compose.ui.graphics.Color(0xFF475569)  // readable slate grey
+    val LightGray = androidx.compose.ui.graphics.Color(0xFF64748B) // lighter slate grey
+    val DarkGray = androidx.compose.ui.graphics.Color(0xFF1E293B) // dark slate
+    val Black = androidx.compose.ui.graphics.Color(0xFFFFFFFF) // mapped to background/panels (reversed)
+    val Transparent = androidx.compose.ui.graphics.Color.Transparent
+    val Unspecified = androidx.compose.ui.graphics.Color.Unspecified
+    val Red = androidx.compose.ui.graphics.Color(0xFFDC2626)
+    val Green = androidx.compose.ui.graphics.Color(0xFF16A34A)
+    val Blue = androidx.compose.ui.graphics.Color(0xFF2563EB)
+    val Yellow = androidx.compose.ui.graphics.Color(0xFFEAB308)
+
+    operator fun invoke(value: Long): androidx.compose.ui.graphics.Color {
+        return androidx.compose.ui.graphics.Color(value)
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @SuppressLint("DefaultLocale")
 @Composable
@@ -404,6 +424,25 @@ fun DashboardScreen(viewModel: NetworkViewModel) {
                                     letterSpacing = 1.sp,
                                     fontWeight = FontWeight.Bold
                                 )
+
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(CyberCyan.copy(alpha = 0.1f))
+                                        .border(1.dp, CyberCyan.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = "📶 CONNECTED: ${if (logs.isNotEmpty()) logs.first().ssid else "CORP_SECURE_WIFI_7"}",
+                                        fontSize = 11.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Bold,
+                                        color = CyberCyan
+                                    )
+                                }
                                 
                                 Spacer(modifier = Modifier.height(18.dp))
                                 
@@ -2421,7 +2460,7 @@ fun DashboardScreen(viewModel: NetworkViewModel) {
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(16.dp))
-                                        .background(Color.White)
+                                        .background(androidx.compose.ui.graphics.Color.White)
                                         .padding(16.dp)
                                 ) {
                                     Canvas(
@@ -2448,26 +2487,26 @@ fun DashboardScreen(viewModel: NetworkViewModel) {
                                         fun drawAnchorAt(startRow: Int, startCol: Int) {
                                             // Outer border (7x7 Modules)
                                             drawRect(
-                                                color = Color.Black,
+                                                color = androidx.compose.ui.graphics.Color.Black,
                                                 topLeft = Offset(startCol * moduleSize, startRow * moduleSize),
                                                 size = Size(7 * moduleSize, 7 * moduleSize)
                                             )
                                             // Hollow border (5x5 Modules)
                                             drawRect(
-                                                color = Color.White,
+                                                color = androidx.compose.ui.graphics.Color.White,
                                                 topLeft = Offset((startCol + 1) * moduleSize, (startRow + 1) * moduleSize),
                                                 size = Size(5 * moduleSize, 5 * moduleSize)
                                             )
                                             // Center solid (3x3 Modules)
                                             drawRect(
-                                                color = Color.Black,
+                                                color = androidx.compose.ui.graphics.Color.Black,
                                                 topLeft = Offset((startCol + 2) * moduleSize, (startRow + 2) * moduleSize),
                                                 size = Size(3 * moduleSize, 3 * moduleSize)
                                             )
                                         }
 
                                         // Clear background with solid white
-                                        drawRect(color = Color.White, size = size)
+                                        drawRect(color = androidx.compose.ui.graphics.Color.White, size = size)
 
                                         // Draw anchoring corners
                                         drawAnchorAt(0, 0)       // Top-Left
@@ -2488,7 +2527,7 @@ fun DashboardScreen(viewModel: NetworkViewModel) {
 
                                                     if (state) {
                                                         drawRect(
-                                                            color = Color.Black,
+                                                            color = androidx.compose.ui.graphics.Color.Black,
                                                             topLeft = Offset(c * moduleSize, r * moduleSize),
                                                             size = Size(moduleSize + 0.5f, moduleSize + 0.5f) // overlapping prevent white micro-seams
                                                         )
@@ -2831,7 +2870,7 @@ fun MetadataRow(label: String, value: String) {
 }
 
 @Composable
-fun DiagnosticDisplayMetric(label: String, value: String, unit: String, color: Color) {
+fun DiagnosticDisplayMetric(label: String, value: String, unit: String, color: androidx.compose.ui.graphics.Color) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             text = label,
