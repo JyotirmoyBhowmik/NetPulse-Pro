@@ -4,6 +4,11 @@
     <domain-config cleartextTrafficPermitted="false">
         <domain includeSubdomains="true">vpnoci.jyotirmoyb.com</domain>
         <domain includeSubdomains="true">generativelanguage.googleapis.com</domain>
+        <pin-set expiration="2027-12-31">
+            <!-- SHA-256 cryptographic pins for Let's Encrypt / Google Trust Services -->
+            <pin digest="SHA-256">C5+Go3eSgBllLzLaTstA8Uo/ZBoKj8B46hR6g7WshA8=</pin>
+            <pin digest="SHA-256">y4Dq6pPCHfU7XvIdpC08pIAt0YIqYAhpG/g4w/sH9uY=</pin>
+        </pin-set>
         <trust-anchors>
             <certificates src="system" />
             <certificates src="user" />

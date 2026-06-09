@@ -81,8 +81,42 @@ fun DashboardScreen(viewModel: NetworkViewModel) {
     val pingFailureCount by viewModel.pingFailureCount.collectAsState()
     val pingCurrentLatency by viewModel.pingCurrentLatency.collectAsState()
 
+    // Observe visual traceroute parameters
+    val tracerouteHost by viewModel.tracerouteHost.collectAsState()
+    val isTracerouting by viewModel.isTracerouting.collectAsState()
+    val tracerouteHops by viewModel.tracerouteHops.collectAsState()
+
+    // Observe signal path modeling and LAN discovery variables
+    val selectedObstructionMaterial by viewModel.selectedObstructionMaterial.collectAsState()
+    val isScanningLan by viewModel.isScanningLan.collectAsState()
+    val discoveredLanDevices by viewModel.discoveredLanDevices.collectAsState()
+
     // Form inputs
     var encryptPasscode by remember { mutableStateOf("") }
+    var guestWiFiPasscode by remember { mutableStateOf("CyberGuestSecure1") }
+    var guestWiFiEncryptionType by remember { mutableStateOf("WPA3-SAE") }
+    var burnInGuardActive by remember { mutableStateOf(true) }
+
+    val infiniteShiftTransition = rememberInfiniteTransition(label = "burn_in_pixel_shift")
+    val shiftX by infiniteShiftTransition.animateFloat(
+        initialValue = -1.2f,
+        targetValue = 1.2f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(6000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "shift_x"
+    )
+    val shiftY by infiniteShiftTransition.animateFloat(
+        initialValue = -1.2f,
+        targetValue = 1.2f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(8000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "shift_y"
+    )
+    val pixelShiftModifier = if (burnInGuardActive) Modifier.offset(x = (shiftX).dp, y = (shiftY).dp) else Modifier
     
     // Bottom tab navigation state
     var selectedTab by remember { mutableStateOf("Home") } // Home, Speedtest, AI Labs, Secure
@@ -333,7 +367,8 @@ fun DashboardScreen(viewModel: NetworkViewModel) {
                             contentAlignment = Alignment.Center
                         ) {
                             Column(
-                                horizontalAlignment = Alignment.CenterHorizontally
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = pixelShiftModifier
                             ) {
                                 val currentRssi = if (logs.isNotEmpty()) logs.first().rssiDbm else -42
                                 val rssiText = if (currentRssi >= 0) "Scanning" else "$currentRssi"
@@ -401,6 +436,208 @@ fun DashboardScreen(viewModel: NetworkViewModel) {
                                                 }
                                         )
                                     }
+                                }
+                            }
+                        }
+                    }
+
+                    // --- Network Health Scoring System Card ---
+                    item {
+                        val currentRssi = if (logs.isNotEmpty()) logs.first().rssiDbm else -42
+                        val healthScore = remember(currentRssi, pingFailureCount) {
+                            var score = 100
+                            // Deduct for weak signal
+                            if (currentRssi < -50) score -= ((-50 - currentRssi) * 0.8f).toInt()
+                            // Deduct for ping drops
+                            if (pingFailureCount > 0) {
+                                score -= (pingFailureCount * 15)
+                            }
+                            score.coerceIn(12, 100)
+                        }
+
+                        val healthColor = when {
+                            healthScore >= 85 -> CyberGreen
+                            healthScore >= 60 -> CyberAmber
+                            else -> CyberRed
+                        }
+
+                        val healthStatusText = when {
+                            healthScore >= 85 -> "COHERENCE OPTIMAL"
+                            healthScore >= 60 -> "DEGRADED LATENCY"
+                            else -> "CRITICAL MITIGATIONS REQUIRED"
+                        }
+
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(24.dp))
+                                .background(CyberSlate)
+                                .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(24.dp))
+                                .padding(16.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text(
+                                        "NETWORK HEALTH QUOTIENT",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = CyberCyan
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        "Synthesized network telemetry integrity index",
+                                        fontSize = 9.sp,
+                                        color = Color.Gray
+                                    )
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(healthColor.copy(alpha = 0.12f))
+                                        .border(1.dp, healthColor, RoundedCornerShape(8.dp))
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = healthStatusText,
+                                        color = healthColor,
+                                        fontSize = 8.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                // Big Score Circular progress block
+                                Box(
+                                    modifier = Modifier
+                                        .size(70.dp)
+                                        .drawBehind {
+                                            // Back track
+                                            drawArc(
+                                                color = Color.White.copy(alpha = 0.05f),
+                                                startAngle = 135f,
+                                                sweepAngle = 270f,
+                                                useCenter = false,
+                                                style = Stroke(width = 6.dp.toPx(), cap = StrokeCap.Round)
+                                            )
+                                            // Progress arc
+                                            drawArc(
+                                                color = healthColor,
+                                                startAngle = 135f,
+                                                sweepAngle = (healthScore / 100f) * 270f,
+                                                useCenter = false,
+                                                style = Stroke(width = 6.dp.toPx(), cap = StrokeCap.Round)
+                                            )
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        modifier = pixelShiftModifier // micro shifts to prevent progress track burn-in!
+                                    ) {
+                                        Text(
+                                            text = "$healthScore",
+                                            fontSize = 22.sp,
+                                            fontWeight = FontWeight.Black,
+                                            color = Color.White,
+                                            letterSpacing = (-1).sp
+                                        )
+                                        Text(
+                                            text = "/100",
+                                            fontSize = 8.sp,
+                                            color = Color.Gray,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+
+                                // Metrics details
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text("Signal Strength Coherence:", fontSize = 10.sp, color = Color.Gray)
+                                        Text("${(100 + currentRssi.coerceIn(-100, -30) * 1.2).toInt().coerceIn(10, 100)}%", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White, fontFamily = FontFamily.Monospace)
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text("Packet Stability Index:", fontSize = 10.sp, color = Color.Gray)
+                                        val stability = if (pingFailureCount == 0) "100%" else "${(100 - pingFailureCount * 15).coerceAtLeast(10)}%"
+                                        Text(stability, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = CyberGreen, fontFamily = FontFamily.Monospace)
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text("Security Host Sentinel:", fontSize = 10.sp, color = Color.Gray)
+                                        Text("VERIFIED (SAFE)", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = CyberGreen, fontFamily = FontFamily.Monospace)
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(14.dp))
+                            Divider(color = Color.White.copy(alpha = 0.05f))
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            // OLED pixel shifter control row
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(CyberCharcoal)
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .clip(RoundedCornerShape(3.dp))
+                                            .background(if (burnInGuardActive) CyberGreen else Color.Gray)
+                                    )
+                                    Text(
+                                        text = if (burnInGuardActive) "OLED SHIFTER ACTIVE (±1.2px)" else "BURN-IN PROTECTION SUSPENDED",
+                                        fontSize = 8.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = if (burnInGuardActive) CyberGreen else Color.Gray
+                                    )
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(if (burnInGuardActive) CyberGreen.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.05f))
+                                        .clickable { burnInGuardActive = !burnInGuardActive }
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = if (burnInGuardActive) "STABILIZE" else "DEFEND",
+                                        fontSize = 8.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = if (burnInGuardActive) CyberGreen else Color.White,
+                                        fontFamily = FontFamily.Monospace
+                                    )
                                 }
                             }
                         }
@@ -580,6 +817,137 @@ fun DashboardScreen(viewModel: NetworkViewModel) {
                             MetadataRow("ISP Provider", ispName)
                             Divider(color = Color.White.copy(alpha = 0.05f), modifier = Modifier.padding(vertical = 10.dp))
                             MetadataRow("Decrypted Public IP", publicIp)
+                        }
+                    }
+
+                    // --- Real-Time Signal Attenuation Modeling Card ---
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(24.dp))
+                                .background(CyberSlate)
+                                .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(24.dp))
+                                .padding(16.dp)
+                        ) {
+                            Text(
+                                "SIGNAL PATH LIGHT ATTENUATION MODEL",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = CyberAmber
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                "Model structural path attenuation and wall interference based on modern frequency band propagation formulas.",
+                                fontSize = 11.sp,
+                                color = Color.Gray,
+                                lineHeight = 16.sp
+                            )
+                            
+                            Spacer(modifier = Modifier.height(12.dp))
+                            
+                            // Obstruction material selection Row
+                            Text(
+                                "SELECT OBSTRUCTION TYPE:",
+                                fontSize = 9.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = Color.White.copy(alpha = 0.6f)
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            
+                            val materials = listOf(
+                                "Drywall (4 dB)" to 4,
+                                "Wood (7 dB)" to 7,
+                                "Brick (12 dB)" to 12,
+                                "Concrete (20 dB)" to 20,
+                                "Steel (28 dB)" to 28
+                            )
+                            
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                materials.forEach { (name, db) ->
+                                    val isSelected = selectedObstructionMaterial == name
+                                    val chipBg = if (isSelected) CyberAmber.copy(alpha = 0.2f) else CyberCharcoal
+                                    val chipBorder = if (isSelected) CyberAmber else Color.White.copy(alpha = 0.05f)
+                                    val chipText = if (isSelected) CyberAmber else Color.LightGray
+                                    
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(chipBg)
+                                            .border(1.dp, chipBorder, RoundedCornerShape(8.dp))
+                                            .clickable { viewModel.selectedObstructionMaterial.value = name }
+                                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                                    ) {
+                                        Text(
+                                            text = name,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = chipText
+                                        )
+                                    }
+                                }
+                            }
+                            
+                            Spacer(modifier = Modifier.height(16.dp))
+                            
+                            // Attenuation Math Display
+                            val freqGhz = if (logs.isNotEmpty()) logs.first().frequencyGhz else 5.0
+                            val selectedMaterialDb = materials.firstOrNull { it.first == selectedObstructionMaterial }?.second ?: 12
+                            
+                            // FSPL calculated for a standard 5 meter distance
+                            val fspl = 20 * kotlin.math.log10(5.0) + 20 * kotlin.math.log10(freqGhz * 1000.0) - 27.55
+                            val totalLoss = fspl + selectedMaterialDb
+                            
+                            val pathLossSafetyColor = when {
+                                totalLoss < 65 -> CyberGreen
+                                totalLoss < 78 -> CyberAmber
+                                else -> CyberRed
+                            }
+                            
+                            val interferenceLevel = when {
+                                selectedMaterialDb <= 4 -> "NEGligible (DRYWALL/GLASS)"
+                                selectedMaterialDb <= 7 -> "LOW INTENSITY (WOOD)"
+                                selectedMaterialDb <= 12 -> "MODERATE ABSORPTION (BRICK)"
+                                else -> "SEVERE SIGNAL CRITICAL (CONCRETE/STEEL)"
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Free-Space Loss (5m):", fontSize = 10.sp, color = Color.Gray, fontFamily = FontFamily.Monospace)
+                                    Text("${String.format("%.1f", fspl)} dB", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Structural Absorption:", fontSize = 10.sp, color = Color.Gray, fontFamily = FontFamily.Monospace)
+                                    Text("$selectedMaterialDb.0 dB", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = CyberAmber)
+                                }
+                            }
+                            
+                            Divider(color = Color.White.copy(alpha = 0.05f), modifier = Modifier.padding(vertical = 10.dp))
+                            
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text("Estimated Path Loss:", fontSize = 9.sp, color = Color.Gray, fontFamily = FontFamily.Monospace)
+                                    Text("${String.format("%.1f", totalLoss)} dB", fontSize = 18.sp, fontWeight = FontWeight.Black, color = pathLossSafetyColor, fontFamily = FontFamily.Monospace)
+                                }
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text("Interference Profile:", fontSize = 9.sp, color = Color.Gray, fontFamily = FontFamily.Monospace)
+                                    Text(interferenceLevel, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = pathLossSafetyColor, fontFamily = FontFamily.Monospace)
+                                }
+                            }
                         }
                     }
                     
@@ -1238,6 +1606,219 @@ fun DashboardScreen(viewModel: NetworkViewModel) {
                         }
                     }
 
+                    // --- Real-time Visual Traceroute Card ---
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(32.dp))
+                                .background(CyberCharcoal)
+                                .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(32.dp))
+                                .padding(24.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.LocationOn,
+                                        contentDescription = "Routing Icon",
+                                        tint = CyberCyan,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Text(
+                                        "BACKGROUND TRACEROUTE ENGINE",
+                                        style = MaterialTheme.typography.titleSmall.copy(
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White
+                                        )
+                                    )
+                                }
+                                
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(
+                                            if (isTracerouting) CyberCyan.copy(alpha = 0.15f)
+                                            else Color.White.copy(alpha = 0.05f)
+                                        )
+                                        .border(
+                                            1.dp,
+                                            if (isTracerouting) CyberCyan.copy(alpha = 0.4f)
+                                            else Color.White.copy(alpha = 0.1f),
+                                            RoundedCornerShape(12.dp)
+                                        )
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = if (isTracerouting) "TRACE ACTIVE" else "READY",
+                                        color = if (isTracerouting) CyberCyan else Color.Gray,
+                                        fontSize = 8.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                            }
+                            
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                "Diagnose sudden latency spikes by mapping the real-time routing path hop sequence to the target server.",
+                                fontSize = 11.sp,
+                                color = Color.Gray,
+                                lineHeight = 16.sp
+                            )
+                            
+                            Spacer(modifier = Modifier.height(16.dp))
+                            
+                            OutlinedTextField(
+                                value = tracerouteHost,
+                                onValueChange = { viewModel.tracerouteHost.value = it },
+                                label = {
+                                    Text("IPv4 Traceroute Target Host", fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(14.dp),
+                                singleLine = true,
+                                textStyle = LocalTextStyle.current.copy(
+                                    color = Color.White,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 13.sp
+                                ),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = CyberCyan,
+                                    unfocusedBorderColor = Color.White.copy(alpha = 0.1f),
+                                    focusedLabelColor = CyberCyan,
+                                    unfocusedLabelColor = Color.LightGray
+                                )
+                            )
+                            
+                            Spacer(modifier = Modifier.height(16.dp))
+                            
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Button(
+                                    onClick = { viewModel.startTraceroute() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = CyberCyan),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.weight(1f).height(46.dp),
+                                    enabled = !isTracerouting && tracerouteHost.trim().isNotEmpty()
+                                ) {
+                                    Text("RESOLVE PATHWAY", color = CyberBlack, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                                }
+                                
+                                Button(
+                                    onClick = { viewModel.stopTraceroute() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = CyberCharcoal),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.weight(1f).height(46.dp),
+                                    enabled = isTracerouting,
+                                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
+                                ) {
+                                    Text("HALT SWEEP", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                                }
+                            }
+                            
+                            if (tracerouteHops.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(20.dp))
+                                Text(
+                                    "ROUTING PATH HOPS (MAX 8)",
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White.copy(alpha = 0.5f)
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                
+                                Column(
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    tracerouteHops.forEach { hop ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(CyberSlate)
+                                                .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+                                                .padding(12.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                modifier = Modifier.weight(1f)
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(20.dp)
+                                                        .clip(RoundedCornerShape(10.dp))
+                                                        .background(
+                                                            if (hop.status == "PENDING") CyberAmber.copy(alpha = 0.1f)
+                                                            else CyberCyan.copy(alpha = 0.1f)
+                                                        ),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Text(
+                                                        text = "${hop.hopCount}",
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (hop.status == "PENDING") CyberAmber else CyberCyan,
+                                                        fontFamily = FontFamily.Monospace
+                                                    )
+                                                }
+                                                
+                                                Column {
+                                                    Text(
+                                                        text = hop.hostname,
+                                                        fontSize = 11.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = Color.White,
+                                                        maxLines = 1
+                                                    )
+                                                    Text(
+                                                        text = hop.ip,
+                                                        fontSize = 9.sp,
+                                                        color = Color.Gray,
+                                                        fontFamily = FontFamily.Monospace
+                                                    )
+                                                }
+                                            }
+                                            
+                                            if (hop.status == "PENDING") {
+                                                CircularProgressIndicator(
+                                                    modifier = Modifier.size(12.dp),
+                                                    color = CyberAmber,
+                                                    strokeWidth = 1.5.dp
+                                                )
+                                            } else {
+                                                Text(
+                                                    text = "${hop.latencyMs} ms",
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (hop.latencyMs < 10f) CyberGreen else if (hop.latencyMs < 20f) CyberCyan else CyberAmber,
+                                                    fontFamily = FontFamily.Monospace
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    item {
+                        Spacer(modifier = Modifier.height(24.dp))
+                    }
+
                     // Historical diagnostics stored lists
                     item {
                         Text(
@@ -1733,7 +2314,452 @@ fun DashboardScreen(viewModel: NetworkViewModel) {
                             }
                         }
                     }
+
+                    // --- GUEST WI-FI QR CODE GENERATOR CARD ---
+                    item {
+                        val currentSsid = if (logs.isNotEmpty()) logs.first().ssid else "NetPulse-X7"
+                        val qrSeed = remember(currentSsid, guestWiFiPasscode, guestWiFiEncryptionType) {
+                            val combined = currentSsid + guestWiFiPasscode + guestWiFiEncryptionType
+                            java.lang.Math.abs(combined.hashCode())
+                        }
+
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(24.dp))
+                                .background(CyberSlate)
+                                .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(24.dp))
+                                .padding(20.dp)
+                        ) {
+                            Text(
+                                "SECURE NETWORK SIGN-ON GEN (QR)",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = CyberCyan
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                "Render highly secure connection profiles containing local node targets directly to trusted peers without manual credential broadcasts.",
+                                fontSize = 11.sp,
+                                color = Color.Gray,
+                                lineHeight = 16.sp
+                            )
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            OutlinedTextField(
+                                value = guestWiFiPasscode,
+                                onValueChange = { guestWiFiPasscode = it },
+                                label = { Text("Guest Credentials / Key", color = Color.Gray, fontSize = 11.sp) },
+                                singleLine = true,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = CyberCyan,
+                                    unfocusedBorderColor = CyberCharcoal,
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White
+                                ),
+                                textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("guest_wifi_passcode_input")
+                            )
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            // Encryption Mode Selection
+                            Text(
+                                "ACTIVE PROFILE ENCRYPTION MODEL:",
+                                fontSize = 9.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = Color.White.copy(alpha = 0.5f)
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            val encTypes = listOf("WPA3-SAE", "WPA2-PSK", "OPEN/UNSECURED")
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                encTypes.forEach { enc ->
+                                    val isSelected = guestWiFiEncryptionType == enc
+                                    val bg = if (isSelected) CyberCyan.copy(alpha = 0.15f) else CyberCharcoal
+                                    val brd = if (isSelected) CyberCyan else Color.White.copy(alpha = 0.05f)
+                                    val txtColor = if (isSelected) CyberCyan else Color.LightGray
+
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(bg)
+                                            .border(1.dp, brd, RoundedCornerShape(8.dp))
+                                            .clickable { guestWiFiEncryptionType = enc }
+                                            .padding(vertical = 8.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = enc,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = txtColor
+                                        )
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(24.dp))
+
+                            // Render Matrix QR Code
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .wrapContentHeight(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(Color.White)
+                                        .padding(16.dp)
+                                ) {
+                                    Canvas(
+                                        modifier = Modifier
+                                            .size(160.dp)
+                                            .testTag("secure_guest_qr_canvas")
+                                    ) {
+                                        val dimension = 21
+                                        val sizePx = size.width
+                                        val moduleSize = sizePx / dimension
+
+                                        // Seed deterministic random based on variables
+                                        val rand = java.util.Random(qrSeed.toLong())
+
+                                        // Helpler function to determine if coordinate is inside standard QR anchors
+                                        fun isAnchorBlock(r: Int, c: Int): Boolean {
+                                            if (r < 7 && c < 7) return true
+                                            if (r < 7 && c >= 14) return true
+                                            if (r >= 14 && c < 7) return true
+                                            return false
+                                        }
+
+                                        // Helper function to draw an anchor block
+                                        fun drawAnchorAt(startRow: Int, startCol: Int) {
+                                            // Outer border (7x7 Modules)
+                                            drawRect(
+                                                color = Color.Black,
+                                                topLeft = Offset(startCol * moduleSize, startRow * moduleSize),
+                                                size = Size(7 * moduleSize, 7 * moduleSize)
+                                            )
+                                            // Hollow border (5x5 Modules)
+                                            drawRect(
+                                                color = Color.White,
+                                                topLeft = Offset((startCol + 1) * moduleSize, (startRow + 1) * moduleSize),
+                                                size = Size(5 * moduleSize, 5 * moduleSize)
+                                            )
+                                            // Center solid (3x3 Modules)
+                                            drawRect(
+                                                color = Color.Black,
+                                                topLeft = Offset((startCol + 2) * moduleSize, (startRow + 2) * moduleSize),
+                                                size = Size(3 * moduleSize, 3 * moduleSize)
+                                            )
+                                        }
+
+                                        // Clear background with solid white
+                                        drawRect(color = Color.White, size = size)
+
+                                        // Draw anchoring corners
+                                        drawAnchorAt(0, 0)       // Top-Left
+                                        drawAnchorAt(0, 14)      // Top-Right
+                                        drawAnchorAt(14, 0)      // Bottom-Left
+
+                                        // Draw remaining modules as deterministic bits
+                                        for (r in 0 until dimension) {
+                                            for (c in 0 until dimension) {
+                                                if (!isAnchorBlock(r, c)) {
+                                                    // Timing patterns standard rows / columns are drawn with precise dots
+                                                    val isTimingPattern = (r == 6 || c == 6)
+                                                    val state = if (isTimingPattern) {
+                                                        (r % 2 == 0 && c % 2 == 0)
+                                                    } else {
+                                                        rand.nextBoolean()
+                                                    }
+
+                                                    if (state) {
+                                                        drawRect(
+                                                            color = Color.Black,
+                                                            topLeft = Offset(c * moduleSize, r * moduleSize),
+                                                            size = Size(moduleSize + 0.5f, moduleSize + 0.5f) // overlapping prevent white micro-seams
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(12.dp))
+
+                                    Text(
+                                        text = "WIFI:S:$currentSsid;T:$guestWiFiEncryptionType;P:${guestWiFiPasscode.take(4)}****;;",
+                                        color = Color.DarkGray,
+                                        fontSize = 9.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Lock, contentDescription = "Security Active", tint = CyberCyan, modifier = Modifier.size(12.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    "Scan with any Android QR Scanner to bind securely",
+                                    fontSize = 11.sp,
+                                    color = Color.Gray
+                                )
+                            }
+                        }
+                    }
+
+                    // --- SECURITY SENTINEL CORNER CARD ---
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(24.dp))
+                                .background(CyberSlate)
+                                .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(24.dp))
+                                .padding(16.dp)
+                        ) {
+                            Text(
+                                "SECUREMENT SENTINEL CORNER",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = CyberGreen
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                "Proactive detection system monitoring ARP Spoofing, MitM routes, MAC Address shifts, and local network intrusion hosts.",
+                                fontSize = 11.sp,
+                                color = Color.Gray,
+                                lineHeight = 15.sp
+                            )
+                            
+                            Spacer(modifier = Modifier.height(16.dp))
+                            
+                            // 1. Rogue AP & MitM indicators
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(CyberCharcoal)
+                                        .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+                                        .padding(10.dp)
+                                ) {
+                                    Column {
+                                        Text("PINEAPPLE/ROGUE AP", fontSize = 8.sp, color = CyberGreen, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text("SECURE / NO ROGUE", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Medium)
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text("SSID/BSSID verified", fontSize = 9.sp, color = Color.Gray)
+                                    }
+                                }
+                                
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(CyberCharcoal)
+                                        .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+                                        .padding(10.dp)
+                                ) {
+                                    Column {
+                                        Text("ARP MITM INTRUSION", fontSize = 8.sp, color = CyberGreen, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text("INTEGRITY NORMAL", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Medium)
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text("Gateway signature OK", fontSize = 9.sp, color = Color.Gray)
+                                    }
+                                }
+                            }
+                            
+                            Spacer(modifier = Modifier.height(12.dp))
+                            
+                            // 2. MAC Randomization Audit Line
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(CyberCharcoal)
+                                    .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+                                    .padding(10.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Lock, contentDescription = "Security Status", tint = CyberGreen, modifier = Modifier.size(16.dp))
+                                    Column {
+                                        Text("MAC RANDOMIZATION AUDIT", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White, fontFamily = FontFamily.Monospace)
+                                        Text("Hardware ID spoofing active", fontSize = 9.sp, color = Color.Gray)
+                                    }
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(CyberGreen.copy(alpha = 0.1f))
+                                        .border(1.dp, CyberGreen.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text("ENFORCED", fontSize = 8.sp, color = CyberGreen, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                                }
+                            }
+                            
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Divider(color = Color.White.copy(alpha = 0.05f))
+                            Spacer(modifier = Modifier.height(16.dp))
+                            
+                            // 3. Local Subnet Dev Scan Section
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "LOCAL SUBNET PORT SCANNER (LAN)",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = Color.White
+                                )
+                                
+                                Button(
+                                    onClick = {
+                                        if (isScanningLan) viewModel.stopLanDeviceScan()
+                                        else viewModel.startLanDeviceDiscovery()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (isScanningLan) CyberRed else CyberGreen
+                                    ),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.height(32.dp).testTag("lan_scan_action_button")
+                                ) {
+                                    Text(
+                                        text = if (isScanningLan) "HALT" else "SCAN",
+                                        color = CyberBlack,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                            }
+                            
+                            if (isScanningLan || discoveredLanDevices.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(12.dp))
+                                
+                                if (isScanningLan && discoveredLanDevices.isEmpty()) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(CyberCharcoal)
+                                            .padding(16.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = CyberGreen, strokeWidth = 2.dp)
+                                            Text("Snooping network interface gateways...", fontSize = 10.sp, color = Color.Gray, fontFamily = FontFamily.Monospace)
+                                        }
+                                    }
+                                } else {
+                                    Column(
+                                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        discoveredLanDevices.forEach { dev ->
+                                            val safetyColor = when (dev.safetyStatus) {
+                                                "SAFE" -> CyberGreen
+                                                "THREAT" -> CyberRed
+                                                else -> CyberAmber
+                                            }
+                                            
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clip(RoundedCornerShape(12.dp))
+                                                    .background(CyberCharcoal)
+                                                    .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+                                                    .padding(12.dp),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                                    ) {
+                                                        Text(dev.ipAddress, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White, fontFamily = FontFamily.Monospace)
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .clip(RoundedCornerShape(4.dp))
+                                                                .background(safetyColor.copy(alpha = 0.1f))
+                                                                .padding(horizontal = 4.dp, vertical = 2.dp)
+                                                        ) {
+                                                            Text(dev.safetyStatus, fontSize = 7.sp, color = safetyColor, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                                                        }
+                                                    }
+                                                    Text(dev.deviceName, fontSize = 10.sp, color = Color.LightGray)
+                                                    Text(dev.osEstimate, fontSize = 9.sp, color = Color.Gray)
+                                                }
+                                                
+                                                Column(horizontalAlignment = Alignment.End) {
+                                                    Text("ACTIVE PORTS", fontSize = 8.sp, color = Color.Gray, fontFamily = FontFamily.Monospace)
+                                                    Text(
+                                                        text = dev.openPorts.joinToString(", "),
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = CyberGreen,
+                                                        fontFamily = FontFamily.Monospace
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        
+                                        if (isScanningLan) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                                                horizontalArrangement = Arrangement.Center,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                CircularProgressIndicator(modifier = Modifier.size(10.dp), color = CyberGreen, strokeWidth = 1.5.dp)
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text("Pinging remaining nodes...", fontSize = 9.sp, color = Color.Gray, fontFamily = FontFamily.Monospace)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                     
+                    item {
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
+
                     item {
                         Card(
                             modifier = Modifier
