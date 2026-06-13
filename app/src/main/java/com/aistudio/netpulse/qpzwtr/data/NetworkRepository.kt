@@ -29,14 +29,17 @@ class NetworkRepository(private val context: Context) {
     val recentAnomalies: Flow<List<AnomalyLog>> = dao.getRecentAnomalies()
     val allRoamLogs: Flow<List<RoamingLog>> = dao.getAllRoamLogs()
     val dataCapConfig: Flow<DataCapConfig?> = dao.getDataCap()
+    val allPageVisits: Flow<List<PageVisit>> = dao.getAllPageVisits()
 
     // --- Database Operations ---
     suspend fun insertLog(log: NetworkLog) = dao.insertLog(log)
     suspend fun insertAnomaly(anomaly: AnomalyLog) = dao.insertAnomaly(anomaly)
     suspend fun insertRoamLog(roam: RoamingLog) = dao.insertRoamLog(roam)
+    suspend fun insertPageVisit(pageVisit: PageVisit) = dao.insertPageVisit(pageVisit)
     suspend fun clearAllTelemetry() = withContext(Dispatchers.IO) {
         dao.clearLogs()
         dao.clearAnomalies()
+        dao.clearPageVisits()
     }
 
     suspend fun updateDataCap(maxMb: Int, usedMb: Double) {
@@ -101,16 +104,17 @@ class NetworkRepository(private val context: Context) {
             ssid = "ManualSpeedTest_Core",
             bssid = "00:1A:11:F2:B3:91",
             rssiDbm = -50,
-            linkSpeedMbps = 1000,
+            linkSpeedMbps = 433,
             standard = "Auto speed target profile: $profileName",
-            frequencyGhz = 5.8,
+            frequencyGhz = 5.0,
             downloadSpeedMbps = result.downloadMbps,
             uploadSpeedMbps = result.uploadMbps,
             latencyMs = result.latencyMs,
             isManual = true,
             gatewayIp = result.gatewayIp,
             publicIp = result.publicIp,
-            ispName = result.ispName
+            ispName = result.ispName,
+            securityType = "WPA2"
         )
         dao.insertLog(logItem)
 
@@ -164,7 +168,7 @@ class NetworkRepository(private val context: Context) {
 
         if (actualList.isEmpty()) {
             // Add initial sample to avoid empty file
-            csvBody.append("0,1771142400000,PremiumWifi,00:1A:11:F2:B3:91,-45,45.2,18.4,12.0,Wi-Fi 6,Cloudflare,184.22.109.11\n")
+            csvBody.append("0,1771142400000,PremiumWifi,00:1A:11:F2:B3:91,-45,45.2,18.4,12.0,Wi-Fi 5,Cloudflare,184.22.109.11\n")
         } else {
             for (log in actualList) {
                 csvBody.append("${log.id},${log.timestamp},${log.ssid.replace(",", " ")},${log.bssid},${log.rssiDbm},${log.downloadSpeedMbps},${log.uploadSpeedMbps},${log.latencyMs},${log.standard},${log.ispName},${log.publicIp}\n")

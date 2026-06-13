@@ -44,11 +44,16 @@ import com.aistudio.netpulse.qpzwtr.MainActivity
 import com.aistudio.netpulse.qpzwtr.data.AnomalyLog
 import com.aistudio.netpulse.qpzwtr.data.NetworkLog
 import com.aistudio.netpulse.qpzwtr.data.RoamingLog
+import com.aistudio.netpulse.qpzwtr.data.PageVisit
 import com.aistudio.netpulse.qpzwtr.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 import kotlin.math.sin
+import android.view.ViewGroup
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.compose.ui.viewinterop.AndroidView
 
 // Shadow Color object to dynamically translate existing dark-themed hardcoded colors to white-based light colors
 @Suppress("ClassName")
@@ -82,6 +87,7 @@ fun DashboardScreen(viewModel: NetworkViewModel) {
     val anomalies by viewModel.recentAnomalies.collectAsState()
     val roamLogs by viewModel.allRoamLogs.collectAsState()
     val dataCap by viewModel.dataCapConfig.collectAsState()
+    val pageVisits by viewModel.allPageVisits.collectAsState()
 
     // Observe interactive states
     val speedTestState by viewModel.speedTestState.collectAsState()
@@ -140,6 +146,21 @@ fun DashboardScreen(viewModel: NetworkViewModel) {
     
     // Bottom tab navigation state
     var selectedTab by remember { mutableStateOf("Home") } // Home, Speedtest, AI Labs, Secure
+
+    // Restore last visited page from DB on launch
+    LaunchedEffect(pageVisits) {
+        if (pageVisits.isNotEmpty() && selectedTab == "Home") {
+            val lastPage = pageVisits.first().pageName
+            if (lastPage in listOf("Home", "Speedtest", "AI Labs", "Secure")) {
+                selectedTab = lastPage
+            }
+        }
+    }
+
+    // Log the initial page view to DB
+    LaunchedEffect(Unit) {
+        viewModel.logPageVisit("Home")
+    }
 
     // Request permissions launcher
     val permissionsToRequest = remember {
@@ -257,7 +278,10 @@ fun DashboardScreen(viewModel: NetworkViewModel) {
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier
                                 .weight(1f)
-                                .clickable { selectedTab = tabName }
+                                .clickable { 
+                                    selectedTab = tabName 
+                                    viewModel.logPageVisit(tabName)
+                                }
                                 .padding(vertical = 8.dp)
                                 .testTag(tag)
                         ) {
@@ -324,7 +348,7 @@ fun DashboardScreen(viewModel: NetworkViewModel) {
                         )
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = if (logs.isNotEmpty()) logs.first().ssid else "CORP_SECURE_WIFI_7",
+                                text = if (logs.isNotEmpty()) logs.first().ssid else "HomeMesh_Secure",
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.Light,
                                 color = Color.White
@@ -338,7 +362,7 @@ fun DashboardScreen(viewModel: NetworkViewModel) {
                                     .padding(horizontal = 5.dp, vertical = 2.dp)
                             ) {
                                 Text(
-                                    "WPA3",
+                                    text = if (logs.isNotEmpty()) logs.first().securityType else "WPA2",
                                     fontSize = 8.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = CyberGreen,
@@ -436,7 +460,7 @@ fun DashboardScreen(viewModel: NetworkViewModel) {
                                         .padding(horizontal = 10.dp, vertical = 4.dp)
                                 ) {
                                     Text(
-                                        text = "📶 CONNECTED: ${if (logs.isNotEmpty()) logs.first().ssid else "CORP_SECURE_WIFI_7"}",
+                                        text = "📶 CONNECTED: ${if (logs.isNotEmpty()) logs.first().ssid else "HomeMesh_Secure"}",
                                         fontSize = 11.sp,
                                         fontFamily = FontFamily.Monospace,
                                         fontWeight = FontWeight.Bold,
@@ -753,6 +777,14 @@ fun DashboardScreen(viewModel: NetworkViewModel) {
                         }
                     }
 
+                    // Embedded real-time D3.js chart
+                    item {
+                        D3RealTimeChart(
+                            logs = logs,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
                     // Grid layout stats pairing Link Speed & Frequency
                     item {
                         val currentSpeed = if (logs.isNotEmpty()) "${logs.first().linkSpeedMbps} Mbps" else "1.2 Gbps"
@@ -787,7 +819,7 @@ fun DashboardScreen(viewModel: NetworkViewModel) {
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = "Wi-Fi 7 Standard",
+                                    text = if (logs.isNotEmpty()) logs.first().standard else "Wi-Fi 5 Standard",
                                     fontSize = 10.sp,
                                     color = Color.White.copy(alpha = 0.3f)
                                 )
@@ -2836,6 +2868,77 @@ fun DashboardScreen(viewModel: NetworkViewModel) {
                             }
                         }
                     }
+
+                    // Persistent Page Visit Logs from SQL Database Auditing
+                    item {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(24.dp)),
+                            colors = CardDefaults.cardColors(containerColor = CyberSlate),
+                            shape = RoundedCornerShape(24.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(20.dp)) {
+                                Text(
+                                    "PERSISTENT PAGE VISIT AUDIT (SQL ROOM DB)",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = CyberCyan
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    "Chronological indices of interactive page traversals logged in real-time under SQLite.",
+                                    fontSize = 10.sp,
+                                    color = Color.LightGray
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+
+                                if (pageVisits.isEmpty()) {
+                                    Text(
+                                        "No page log indices recorded in Room yet.",
+                                        fontSize = 10.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = Color.White.copy(alpha = 0.4f)
+                                    )
+                                } else {
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        pageVisits.take(6).forEach { visit ->
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(6.dp)
+                                                            .clip(RoundedCornerShape(3.dp))
+                                                            .background(CyberGreen)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Text(
+                                                        text = "PAGE: ${visit.pageName.uppercase()}",
+                                                        fontSize = 10.sp,
+                                                        fontFamily = FontFamily.Monospace,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = Color.White
+                                                    )
+                                                }
+                                                Text(
+                                                    text = java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.getDefault())
+                                                        .format(java.util.Date(visit.timestamp)),
+                                                    fontSize = 9.sp,
+                                                    fontFamily = FontFamily.Monospace,
+                                                    color = Color.Gray
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                     
                     item {
                         Spacer(modifier = Modifier.height(16.dp))
@@ -2927,3 +3030,271 @@ private fun getActiveBarsCount(rssi: Int): Int {
         else -> 1
     }
 }
+
+@SuppressLint("SetJavaScriptEnabled")
+@Composable
+fun D3RealTimeChart(
+    logs: List<NetworkLog>,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val latestSsid = if (logs.isNotEmpty()) logs.first().ssid else "HomeMesh_Secure"
+    val latestRssi = if (logs.isNotEmpty()) logs.first().rssiDbm else -45
+
+    // Map log entries representing the last 60 seconds (sampling at 6 second intervals)
+    val recentPoints = remember(logs) {
+        val mapped = logs.take(15).reversed().mapIndexed { index, log ->
+            val secondsAgo = (logs.size - 1 - index) * 6
+            """{"x": $secondsAgo, "y": ${log.rssiDbm}}"""
+        }
+        if (mapped.isEmpty()) {
+            (0..10).map { i ->
+                val secondsAgo = (10 - i) * 6
+                val dummyRssi = -35 - (i * 2) + (Math.sin(i.toDouble()) * 5).toInt()
+                """{"x": $secondsAgo, "y": $dummyRssi}"""
+            }
+        } else mapped
+    }
+
+    val dataJson = remember(recentPoints) { "[${recentPoints.joinToString(",")}]" }
+
+    val htmlContent = remember(latestSsid, latestRssi, dataJson) {
+        """
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+          <style>
+            body {
+              background-color: #0B0F19; /* matching CyberBlack background */
+              color: #ffffff;
+              font-family: monospace;
+              margin: 0;
+              padding: 8px;
+              overflow: hidden;
+            }
+            #container {
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              width: 100%;
+            }
+            #chart-title {
+              font-size: 10px;
+              color: #38BDF8; /* CyberCyan */
+              text-transform: uppercase;
+              font-weight: bold;
+              margin-bottom: 5px;
+              letter-spacing: 1px;
+              text-align: center;
+              width: 100%;
+            }
+            #chart {
+              width: 100%;
+              height: 160px;
+            }
+            .line {
+              fill: none;
+              stroke: #00FF66; /* CyberGreen */
+              stroke-width: 3px;
+              stroke-linecap: round;
+              filter: drop-shadow(0px 0px 4px rgba(0, 255, 102, 0.5));
+            }
+            .area {
+              fill: url(#area-gradient);
+              opacity: 0.15;
+            }
+            .grid line {
+              stroke: #334155;
+              stroke-opacity: 0.3;
+              shape-rendering: crispEdges;
+            }
+            .grid path {
+              stroke-width: 0;
+            }
+            .axis text {
+              font-size: 8px;
+              fill: #64748B;
+              font-family: monospace;
+            }
+            .axis path, .axis line {
+              stroke: #334155;
+              stroke-opacity: 0.5;
+            }
+            .dot {
+              fill: #00FF66;
+              stroke: #0B0F19;
+              stroke-width: 1.5px;
+            }
+            .pulse-dot {
+              fill: #00FFFF;
+              filter: drop-shadow(0px 0px 4px #00FFFF);
+            }
+          </style>
+          <script src="https://d3js.org/d3.v7.min.js"></script>
+        </head>
+        <body>
+          <div id="container">
+            <div id="chart-title">SSID: <span style="color:#00FF66;">$latestSsid</span> | <span style="color:#FFBB00;">$latestRssi dBm</span></div>
+            <div id="chart"></div>
+          </div>
+          
+          <script>
+            function drawChart(data) {
+              d3.select("#chart").selectAll("*").remove();
+
+              const width = document.getElementById("chart").clientWidth || window.innerWidth || 300;
+              const height = 150;
+              const margin = { top: 10, right: 15, bottom: 20, left: 35 };
+
+              const svg = d3.select("#chart")
+                .append("svg")
+                .attr("width", "100%")
+                .attr("height", height)
+                .append("g")
+                .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+              const defs = svg.append("defs");
+              const areaGradient = defs.append("linearGradient")
+                .attr("id", "area-gradient")
+                .attr("x1", "0%").attr("y1", "0%")
+                .attr("x2", "0%").attr("y2", "100%");
+                
+              areaGradient.append("stop")
+                .attr("offset", "0%")
+                .attr("stop-color", "#00FF66")
+                .attr("stop-opacity", 0.3);
+                
+              areaGradient.append("stop")
+                .attr("offset", "100%")
+                .attr("stop-color", "#00FF66")
+                .attr("stop-opacity", 0.0);
+
+              const innerWidth = width - margin.left - margin.right;
+              const innerHeight = height - margin.top - margin.bottom;
+
+              const x = d3.scaleLinear()
+                .domain([d3.max(data, d => d.x), d3.min(data, d => d.x)])
+                .range([innerWidth, 0]);
+
+              const y = d3.scaleLinear()
+                .domain([-100, -30])
+                .range([innerHeight, 0]);
+
+              svg.append("g")
+                .attr("class", "grid")
+                .attr("transform", "translate(0," + innerHeight + ")")
+                .call(d3.axisBottom(x).ticks(5).tickSize(-innerHeight).tickFormat(""));
+
+              svg.append("g")
+                .attr("class", "grid")
+                .call(d3.axisLeft(y).ticks(5).tickSize(-innerWidth).tickFormat(""));
+
+              const xAxis = d3.axisBottom(x)
+                .ticks(5)
+                .tickFormat(d => d + "s");
+
+              const yAxis = d3.axisLeft(y)
+                .ticks(5)
+                .tickFormat(d => d + "dB");
+
+              svg.append("g")
+                .attr("class", "axis")
+                .attr("transform", "translate(0," + innerHeight + ")")
+                .call(xAxis);
+
+              svg.append("g")
+                .attr("class", "axis")
+                .call(yAxis);
+
+              const line = d3.line()
+                .x(d => x(d.x))
+                .y(d => y(d.y))
+                .curve(d3.curveMonotoneX);
+
+              const area = d3.area()
+                .x(d => x(d.x))
+                .y0(innerHeight)
+                .y1(d => y(d.y))
+                .curve(d3.curveMonotoneX);
+
+              svg.append("path")
+                .datum(data)
+                .attr("class", "area")
+                .attr("d", area);
+
+              svg.append("path")
+                .datum(data)
+                .attr("class", "line")
+                .attr("d", line);
+
+              svg.selectAll(".dot")
+                .data(data)
+                .enter().append("circle")
+                .attr("class", (d, i) => i === data.length - 1 ? "dot pulse-dot" : "dot")
+                .attr("cx", d => x(d.x))
+                .attr("cy", d => y(d.y))
+                .attr("r", (d, i) => i === data.length - 1 ? 5 : 3);
+            }
+
+            const initialData = $dataJson;
+            window.onload = function() {
+              drawChart(initialData);
+            };
+
+            function updateDatabaseState(jsonStr) {
+              const parsed = JSON.parse(jsonStr);
+              drawChart(parsed);
+            }
+          </script>
+        </body>
+        </html>
+        """.trimIndent()
+    }
+
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(210.dp)
+            .border(1.dp, androidx.compose.ui.graphics.Color.White.copy(alpha = 0.05f), RoundedCornerShape(24.dp)),
+        colors = CardDefaults.cardColors(containerColor = CyberSlate),
+        shape = RoundedCornerShape(24.dp)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                "D3.JS REAL-TIME ATTENUATIONS LOGGER (60S SWEEP)",
+                fontSize = 9.sp,
+                fontFamily = FontFamily.Monospace,
+                color = CyberCyan,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(bottom = 6.dp)
+            )
+
+            AndroidView(
+                factory = { ctx ->
+                    WebView(ctx).apply {
+                        layoutParams = ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                        settings.javaScriptEnabled = true
+                        settings.domStorageEnabled = true
+                        settings.useWideViewPort = true
+                        settings.loadWithOverviewMode = true
+                        settings.allowFileAccess = true
+                        webViewClient = WebViewClient()
+                        setBackgroundColor(0xFF0F172A.toInt()) // matching CyberSlate background
+                        loadDataWithBaseURL("https://localhost", htmlContent, "text/html", "UTF-8", null)
+                    }
+                },
+                update = { webView ->
+                    webView.evaluateJavascript("javascript:updateDatabaseState('$dataJson');", null)
+                },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(12.dp))
+            )
+        }
+    }
+}
+

@@ -9,8 +9,8 @@ import net.sqlcipher.database.SQLiteDatabase
 import net.sqlcipher.database.SupportFactory
 
 @Database(
-    entities = [NetworkLog::class, RoamingLog::class, AnomalyLog::class, DataCapConfig::class],
-    version = 1,
+    entities = [NetworkLog::class, RoamingLog::class, AnomalyLog::class, DataCapConfig::class, PageVisit::class],
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

@@ -14,8 +14,8 @@ android {
     applicationId = "com.aistudio.netpulse.qpzwtr"
     minSdk = 24
     targetSdk = 36
-    versionCode = 3
-    versionName = "1.2"
+    versionCode = 5
+    versionName = "5.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

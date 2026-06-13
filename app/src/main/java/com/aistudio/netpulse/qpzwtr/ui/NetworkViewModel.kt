@@ -56,6 +56,15 @@ class NetworkViewModel(
     val dataCapConfig: StateFlow<DataCapConfig?> = repository.dataCapConfig
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
+    val allPageVisits: StateFlow<List<PageVisit>> = repository.allPageVisits
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun logPageVisit(pageName: String) {
+        viewModelScope.launch {
+            repository.insertPageVisit(PageVisit(pageName = pageName))
+        }
+    }
+
     // Interactive custom state fields
     val speedTestState = MutableStateFlow<SpeedTestUIState>(SpeedTestUIState.Idle)
     val aiDiagnoseState = MutableStateFlow<AIDiagnoseUIState>(AIDiagnoseUIState.Idle)
@@ -133,7 +142,7 @@ class NetworkViewModel(
                 val anomalies = recentAnomalies.value.take(4)
 
                 val logSummary = if (logs.isEmpty()) {
-                    "No Wi-Fi state logs have been created yet. Currently connected to HomeMesh_Secure (RSSI: -52dBm, speed: 866Mbps, Wi-Fi 6)."
+                    "No Wi-Fi state logs have been created yet. Currently connected to HomeMesh_Secure (RSSI: -52dBm, speed: 433Mbps, Wi-Fi 5)."
                 } else {
                     logs.joinToString("\n") { 
                         "Time: ${it.timestamp}, SSID: ${it.ssid}, Signal: ${it.rssiDbm}dBm, Speed: ${it.linkSpeedMbps}Mbps, Standard: ${it.standard}, DL: ${it.downloadSpeedMbps}Mbps"

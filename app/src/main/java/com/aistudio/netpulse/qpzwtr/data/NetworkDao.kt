@@ -42,4 +42,15 @@ interface NetworkDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdateDataCap(config: DataCapConfig)
+
+    // --- Page Visit Queries ---
+    @Query("SELECT * FROM page_visits ORDER BY timestamp DESC")
+    fun getAllPageVisits(): Flow<List<PageVisit>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPageVisit(pageVisit: PageVisit)
+
+    @Query("DELETE FROM page_visits")
+    suspend fun clearPageVisits()
 }
+

@@ -69,8 +69,8 @@ class NetworkAuditWorker(
                 ssid = "HomeMesh_Secure", // background task fallback standard
                 bssid = "00:1A:11:F2:B3:91",
                 rssiDbm = -55,
-                linkSpeedMbps = 866,
-                standard = "Wi-Fi 6 (802.11ax)",
+                linkSpeedMbps = 433,
+                standard = "Wi-Fi 5 (802.11ac)",
                 frequencyGhz = 5.2,
                 downloadSpeedMbps = result.downloadMbps,
                 uploadSpeedMbps = result.uploadMbps,
@@ -80,7 +80,8 @@ class NetworkAuditWorker(
                 isManual = false,
                 gatewayIp = result.gatewayIp,
                 publicIp = result.publicIp,
-                ispName = result.ispName
+                ispName = result.ispName,
+                securityType = "WPA2"
             )
             dao.insertLog(logItem)
 

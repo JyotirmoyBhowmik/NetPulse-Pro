@@ -21,7 +21,8 @@ data class NetworkLog(
     val isManual: Boolean = false,
     val gatewayIp: String = "192.168.1.1",
     val publicIp: String = "127.0.0.1",
-    val ispName: String = "Default ISP"
+    val ispName: String = "Default ISP",
+    val securityType: String = "WPA2"
 )
 
 @Entity(tableName = "roaming_logs")
@@ -50,4 +51,11 @@ data class DataCapConfig(
     val maxBgDataMb: Int = 500,
     val currentDataUsedMb: Double = 0.0,
     val lastResetTime: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "page_visits")
+data class PageVisit(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val pageName: String,
+    val timestamp: Long = System.currentTimeMillis()
 )

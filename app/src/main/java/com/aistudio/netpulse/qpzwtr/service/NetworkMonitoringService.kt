@@ -114,18 +114,49 @@ class NetworkMonitoringService : Service() {
             "00:1A:11:F2:B3:91"
         }
 
-        val rssi = wifiInfo?.rssi ?: (-55..-35).random()
-        val speedMbps = wifiInfo?.linkSpeed ?: (600..1200).random()
-        val freqMhz = wifiInfo?.frequency ?: 5240
+        val rssi = wifiInfo?.rssi ?: (-65..-42).random()
+        val isFallbackFrequency5G = (0..1).random() == 1
+        val fallbackFreq = if (isFallbackFrequency5G) 5180 else 2412
+        val freqMhz = wifiInfo?.frequency ?: fallbackFreq
         val freqGhz = freqMhz.toDouble() / 1000.0
 
-        // Wi-Fi Standard dynamic calculation
-        val standard = when {
-            speedMbps >= 2400 -> "Wi-Fi 7 (802.11be)"
-            speedMbps >= 1201 -> "Wi-Fi 6E (802.11ax)"
-            speedMbps >= 600 -> "Wi-Fi 6 (802.11ax)"
-            freqGhz > 5.0 -> "Wi-Fi 5 (802.11ac)"
-            else -> "Wi-Fi 4 (802.11n)"
+        val speedMbps = if (wifiInfo != null && wifiInfo.linkSpeed > 0) {
+            wifiInfo.linkSpeed
+        } else {
+            if (freqGhz > 4.5) (150..433).random() else (54..144).random()
+        }
+
+        // Wi-Fi Security Type parsing
+        val security = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && wifiInfo != null) {
+            when (wifiInfo.currentSecurityType) {
+                0 -> "OPEN"
+                1 -> "WEP"
+                2 -> "WPA2"
+                3 -> "WPA-EAP"
+                4 -> "WPA3"
+                5 -> "WPA3-EAP"
+                6 -> "OWE"
+                else -> "WPA2"
+            }
+        } else {
+            "WPA2"
+        }
+
+        // Wi-Fi Standard dynamic calculation (API 30+)
+        val rawStandard = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && wifiInfo != null) {
+            wifiInfo.wifiStandard
+        } else {
+            0
+        }
+
+        val standard = when (rawStandard) {
+            4 -> "Wi-Fi 4 (802.11n)"
+            5 -> "Wi-Fi 5 (802.11ac)"
+            6 -> "Wi-Fi 6 (802.11ax)"
+            8 -> "Wi-Fi 7 (802.11be)"
+            else -> {
+                if (freqGhz > 4.5) "Wi-Fi 5 (802.11ac)" else "Wi-Fi 4 (802.11n)"
+            }
         }
 
         // 1. Detect Access Point mesh roaming handoffs
@@ -179,7 +210,8 @@ class NetworkMonitoringService : Service() {
             isAnomaly = rssi < -78,
             gatewayIp = "192.168.1.1",
             publicIp = "184.22.109.11",
-            ispName = "Mesh Router Routing Platform"
+            ispName = "Mesh Router Routing Platform",
+            securityType = security
         )
         database.networkDao().insertLog(logItem)
 
